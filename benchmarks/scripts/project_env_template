@@ -1,6 +1,6 @@
 #!/bin/bash
 # COPY THIS FILE INTO ./project_env.sh BEFORE CONFIGURING ENVIRONMENT VARIABLES!
-export PROJECT_ID="my-project-1499979282244" # Harald's project id
+export PROJECT_ID="project-67e8e42d-7b06-423d-b70" # Harald's project id
 export SERVICE_ACCOUNT="deployment@$PROJECT_ID.iam.gserviceaccount.com" # Service account attached to GCP instances
 
 # Running `gcloud compute os-login describe-profile` should result in YAML data
@@ -12,7 +12,7 @@ export SERVICE_ACCOUNT="deployment@$PROJECT_ID.iam.gserviceaccount.com" # Servic
 #  2. (If needed) Generate an ssh keypair at `~/.ssh/google_compute_engine`
 #  3. `gcloud compute os-login ssh-keys add --key-file=`~/.ssh/google_compute_engine.pub`
 export OSLOGIN_USERNAME=""
-export OSLOGIN_UID=""
+export OSLOGIN_UID="113233109591522822126"
 
 # The names used for the client and server Docker images when they are
 # pushed to the GCP Artifact Registry. See `./push-client-image.sh`

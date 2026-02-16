@@ -9,7 +9,7 @@ println_green() {
     printf "\033[0;32m$1\033[0m\n"
 }
 
-project_id="my-project-1499979282244"
+project_id="project-67e8e42d-7b06-423d-b70"
 deployment_service_account_id=deployment
 deployment_service_account_mail="${deployment_service_account_id}@${project_id}.iam.gserviceaccount.com"
 
@@ -54,13 +54,13 @@ gcloud dns managed-zones create internal-network \
 
 
 
-gcloud projects add-iam-policy-binding my-project-1499979282244 \
+gcloud projects add-iam-policy-binding project-67e8e42d-7b06-423d-b70 \
     --member="user:<ADD USER HERE>" \
-    --role="projects/my-project-1499979282244/roles/masters_project_admin_role"
+    --role="projects/project-67e8e42d-7b06-423d-b70/roles/masters_project_admin_role"
 
 
 gcloud iam roles create masters_project_admin_role \
-    --project=my-project-1499979282244 \
+    --project=project-67e8e42d-7b06-423d-b70 \
     --title="MastersProjectAdminRole" \
     --description="Custom role for Master's students using GCP Python client API" \
     --permissions="artifactregistry.repositories.create,\
