@@ -11,7 +11,7 @@ export SERVICE_ACCOUNT="deployment@$PROJECT_ID.iam.gserviceaccount.com" # Servic
 #  1. Authenticate gcloud using the `./auth.sh` script
 #  2. (If needed) Generate an ssh keypair at `~/.ssh/google_compute_engine`
 #  3. `gcloud compute os-login ssh-keys add --key-file=`~/.ssh/google_compute_engine.pub`
-export OSLOGIN_USERNAME=""
+export OSLOGIN_USERNAME="vtmhieu111_gmail_com"
 export OSLOGIN_UID="113233109591522822126"
 
 # The names used for the client and server Docker images when they are
