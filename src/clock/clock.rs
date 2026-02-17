@@ -49,15 +49,15 @@ impl SimulatedClock {
 }
 
 //for manual testing
-fn main() {
-    let mut clock = SimulatedClock::new(
-        50.0,
-        100,
-        Duration::from_secs(10),
-    );
+// fn main() {
+//     let mut clock = SimulatedClock::new(
+//         50.0,
+//         100,
+//         Duration::from_secs(10),
+//     );
 
-    loop {
-        println!("Sim time: {}", clock.get_time());
-        std::thread::sleep(Duration::from_secs(1));
-    }
-}
+//     loop {
+//         println!("Sim time: {}", clock.get_time());
+//         std::thread::sleep(Duration::from_secs(1));
+//     }
+// }
