@@ -5,6 +5,8 @@ mod configs;
 mod database;
 mod network;
 mod server;
+#[path = "../clock/clock.rs"]
+mod clock;
 
 #[tokio::main]
 pub async fn main() {

@@ -2,19 +2,15 @@ use std::time::{Duration, Instant};
 
 pub struct SimulatedClock {
     start_instant: Instant,
-    drift_per_sec: f64,        // microseconds per second
-    uncertainty_us: u64,       // ± uncertainty in microseconds
-    sync_interval: Duration,   // how often clock resyncs
+    drift_per_sec: f64,      // microseconds per second
+    uncertainty_us: u64,     // ± uncertainty in microseconds
+    sync_interval: Duration, // how often clock resyncs
     last_sync: Instant,
     drift_offset_us: f64,
 }
 
 impl SimulatedClock {
-    pub fn new(
-        drift_per_sec: f64,
-        uncertainty_us: u64,
-        sync_interval: Duration,
-    ) -> Self {
+    pub fn new(drift_per_sec: f64, uncertainty_us: u64, sync_interval: Duration) -> Self {
         let now = Instant::now();
         Self {
             start_instant: now,

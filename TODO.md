@@ -7,6 +7,7 @@ title: "Assignment 2.1 TODO (Clock + Deadline-Ordered OmniPaxos)"
 Implement **deadline-ordered request processing** for the `omnipaxos-kv` system, where deadlines are derived from **synchronized (imperfect) clocks**. The system must remain **linearizable for all clock qualities**; only **performance** should degrade as clocks get worse.
 
 This repo’s key integration points:
+
 - **Message types**: `src/common.rs` (`messages::ClientMessage`, `messages::ClusterMessage`)
 - **Client request send**: `src/client/client.rs` (`ClientMessage::Append(...)`)
 - **Server request handling / append**: `src/server/server.rs` (`handle_client_messages()` → `append_to_log()` → `omnipaxos.append(...)`)
@@ -36,16 +37,19 @@ This repo’s key integration points:
 
 ## 1) Clock simulator (required API)
 
-- [ ] **Decide time units and representation**
+- [x] **Decide time units and representation**
+
   - Pick one: `i64 micros` recommended (consistent with “μs” requirement).
   - Document conversion to/from existing `Timestamp = i64` in `src/common.rs`.
 
-- [ ] **Add a clock module**
+- [x] **Add a clock module**
+
   - Suggested file: `src/clock.rs` (or `src/common/clock.rs`).
   - Provide a trait:
     - `trait SynchronizedClock { fn get_time_micros(&self) -> i64; fn get_uncertainty_micros(&self) -> i64; }`
 
-- [ ] **Implement a simulator clock**
+- [x] **Implement a simulator clock**
+
   - Inputs:
     - `drift_rate_us_per_s: i64`
     - `base_uncertainty_us: i64` (the configured ±ε)
@@ -58,13 +62,14 @@ This repo’s key integration points:
     - `get_time_micros()`
     - `get_uncertainty_micros()` (constant or time-varying; if varying, explain formula)
 
-- [ ] **Wire the clock into nodes**
+- [x] **Wire the clock into nodes**
   - Server: add a clock instance to `OmniPaxosServer` (`src/server/server.rs`).
   - Client: decide if clients generate deadlines or servers do.
     - Option A (simpler): client sends `deadline_offset_us` and server converts to absolute deadline using its synchronized clock.
     - Option B: client includes absolute `deadline_us` computed from its own clock (requires client clock too).
 
 Acceptance criteria:
+
 - Each node can be queried for **(time, uncertainty)**.
 - You can run with different clock configurations without changing code (config/env/TOML).
 
@@ -80,6 +85,7 @@ Acceptance criteria:
     - `deadline_us: i64`, or
     - `deadline_offset_us: i64`, plus enough info to compute absolute deadline.
 - [ ] **(Optional but useful) Include client-send timestamp**
+
   - Helps measure lateness and debug ordering under delay.
 
 - [ ] **Propagate deadline into the replicated log command**
@@ -90,10 +96,12 @@ Acceptance criteria:
 ### 2.2 Implement early/late buffers on the leader-side append path
 
 - [ ] **Create request wrapper type**
+
   - Contains: `(client_id, command_id, kv_cmd, deadline_us, arrival_time_us, arrival_uncertainty_us, source_node_id?)`
   - Must implement ordering for a min-heap by deadline (tie-breakers deterministic).
 
 - [ ] **Add buffers**
+
   - Early-buffer: `BinaryHeap` (min-heap via `Reverse`) or `BTreeMap` keyed by `(deadline, tie_breaker)`.
   - Late-buffer: `Vec`/`VecDeque` + metrics.
 
@@ -108,7 +116,8 @@ Acceptance criteria:
     - whenever a sync event updates time/uncertainty.
 
 Acceptance criteria:
-- Requests are appended to OmniPaxos **in nondecreasing deadline order** *as observed by the leader’s policy*, except where leader arbitration explicitly overrides (see next section).
+
+- Requests are appended to OmniPaxos **in nondecreasing deadline order** _as observed by the leader’s policy_, except where leader arbitration explicitly overrides (see next section).
 - Late requests are detected and moved to late-buffer.
 
 ---
@@ -118,16 +127,19 @@ Acceptance criteria:
 You must define exactly when leader intervention is required and how it resolves ambiguity **without breaking linearizability**.
 
 - [ ] **Define “overlapping uncertainty windows”**
+
   - Example definition (one option):
     - A request deadline `d` has an uncertainty interval `[d-ε, d+ε]` (or use arrival-time interval).
     - If two intervals overlap, their “true” order may be ambiguous → leader must arbitrate.
 
 - [ ] **Implement arbitration**
+
   - Choose a deterministic tie-breaker:
     - e.g., `(deadline_us, client_id, command_id)` or `(deadline_us, arrival_time_us, source_node_id, command_id)`
   - Ensure arbitration happens in exactly one place (leader) to avoid split-brain ordering.
 
 - [ ] **Non-leader behavior**
+
   - Decide and implement:
     - **Forward-to-leader**: non-leader servers forward client requests (with deadlines) to leader.
     - or **Single ingress**: clients only connect to leader during experiments (simpler, but document limitation).
@@ -140,6 +152,7 @@ You must define exactly when leader intervention is required and how it resolves
     - `forwarded_from_follower`
 
 Acceptance criteria:
+
 - System remains linearizable (see tests section).
 - Fast-path ratio is measurable.
 
@@ -148,20 +161,25 @@ Acceptance criteria:
 ## 4) Benchmark: performance vs clock quality (3 configs)
 
 Clock quality configurations to run:
+
 - **High**: ±10µs uncertainty, 1ms sync interval
 - **Medium**: ±100µs uncertainty, 10ms sync interval
 - **Low**: ±1ms uncertainty, 100ms sync interval
 
 Repo benchmarking hooks:
+
 - Python harness in `benchmarks/`
 - Client already logs request/response times (`src/client/data_collection.rs`)
 
 Tasks:
+
 - [ ] **Add clock quality knobs to server/client configs**
+
   - Prefer: environment variables (`OMNIPAXOS_*`) or existing TOML configs in `build_scripts/`.
   - Ensure benchmarks can set (uncertainty, sync interval, drift rate) per run.
 
 - [ ] **Add instrumentation output**
+
   - Server-side metrics (per node, aggregated by leader):
     - consensus latency (commit - enqueue time)
     - throughput (committed ops/sec)
@@ -179,6 +197,7 @@ Tasks:
     - produce a summary table/CSV
 
 Acceptance criteria:
+
 - You can produce a plot/table showing **clock quality vs latency/throughput/fast-path ratio**.
 - Performance degrades as uncertainty increases / sync frequency decreases.
 
@@ -191,11 +210,13 @@ You need tests that demonstrate **deadline-ordered processing does not break cor
 ### 5.1 Unit tests (fast, deterministic)
 
 - [ ] **Clock simulator tests**
+
   - Drift accumulates between syncs.
   - Resync bounds time error within ±ε (per your model).
   - `get_uncertainty()` behaves as documented.
 
 - [ ] **Buffer/release rule tests**
+
   - Given a fake clock, enqueue requests with deadlines:
     - ensure early-buffer orders correctly
     - ensure release triggers at correct time boundary (including uncertainty logic)
@@ -207,18 +228,21 @@ You need tests that demonstrate **deadline-ordered processing does not break cor
     - verify they are not executed in contradictory orders across nodes
 
 Suggested location:
+
 - `tests/clock_sim.rs`
 - `tests/deadline_buffers.rs`
 
 ### 5.2 Integration tests (tokio, multiple nodes)
 
 - [ ] **Linearizability smoke tests**
+
   - Start 3-node cluster in-process (or as subprocesses).
   - Run mixed Put/Get with deadlines + injected delays.
   - Verify that observed responses correspond to some legal sequential history.
     - Practical approach: validate reads see the latest preceding write in the decided log order.
 
 - [ ] **Network delay + skew**
+
   - Add artificial delay on one node’s message handling path.
   - Give nodes different drift rates.
   - Ensure no safety violations (only more leader interventions / latency).
@@ -228,6 +252,7 @@ Suggested location:
   - Ensure system continues and remains linearizable.
 
 Acceptance criteria:
+
 - Tests pass for high/medium/low clock qualities.
 - No correctness test depends on “good” clocks.
 
@@ -241,4 +266,3 @@ Acceptance criteria:
 - [ ] Leader arbitration for late/overlap cases + fast-path ratio instrumentation.
 - [ ] Benchmarks across 3 clock qualities: latency, throughput, fast-path ratio.
 - [ ] Test suite demonstrating linearizability under skew/drift/delay/failures.
-

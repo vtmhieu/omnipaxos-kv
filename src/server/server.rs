@@ -8,7 +8,37 @@ use omnipaxos::{
 };
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
+use std::{cmp::Ordering, collections::BinaryHeap, sync::Mutex};
 use std::{fs::File, io::Write, time::Duration};
+
+// --- Add the Wrapper for BinaryHeap Ordering ---
+#[derive(Clone, Debug)]
+pub struct BufferedCommand(pub Command);
+
+impl PartialEq for BufferedCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.deadline_us == other.0.deadline_us && self.0.id == other.0.id
+    }
+}
+impl Eq for BufferedCommand {}
+
+impl PartialOrd for BufferedCommand {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BufferedCommand {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse order: smallest deadline_us is at the top of the max-heap (making it a min-heap)
+        other
+            .0
+            .deadline_us
+            .cmp(&self.0.deadline_us)
+            .then_with(|| other.0.id.cmp(&self.0.id))
+    }
+}
+// -----------------------------------------------
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -24,6 +54,11 @@ pub struct OmniPaxosServer {
     omnipaxos_msg_buffer: Vec<Message<Command>>,
     config: OmniPaxosKVConfig,
     peers: Vec<NodeId>,
+    clock: Mutex<crate::clock::SimulatedClock>,
+
+    // Updated to use the wrapper and pure Command
+    early_buffer: BinaryHeap<BufferedCommand>,
+    late_buffer: Vec<Command>,
 }
 
 impl OmniPaxosServer {
@@ -33,8 +68,17 @@ impl OmniPaxosServer {
         let omnipaxos_config: OmniPaxosConfig = config.clone().into();
         let omnipaxos_msg_buffer = Vec::with_capacity(omnipaxos_config.server_config.buffer_size);
         let omnipaxos = omnipaxos_config.build(storage).unwrap();
-        // Waits for client and server network connections to be established
+
         let network = Network::new(config.clone(), NETWORK_BATCH_SIZE).await;
+
+        let clock_config = &config.local.clock;
+        let sync_interval = Duration::from_millis(clock_config.sync_interval_ms);
+        let clock = Mutex::new(crate::clock::SimulatedClock::new(
+            clock_config.drift_rate_us_per_s,
+            clock_config.uncertainty_us,
+            sync_interval,
+        ));
+
         OmniPaxosServer {
             id: config.local.server_id,
             database: Database::new(),
@@ -44,6 +88,9 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
+            clock,
+            early_buffer: BinaryHeap::new(),
+            late_buffer: Vec::new(),
         }
     }
 
@@ -57,10 +104,18 @@ impl OmniPaxosServer {
             .await;
         // Main event loop with leader election
         let mut election_interval = tokio::time::interval(ELECTION_TIMEOUT);
+        // Add a fast interval to constantly check the buffers against the clock
+        let mut buffer_interval = tokio::time::interval(Duration::from_millis(10));
+
         loop {
             tokio::select! {
                 _ = election_interval.tick() => {
                     self.omnipaxos.tick();
+                    self.send_outgoing_msgs();
+                },
+                _ = buffer_interval.tick() => {
+                    // Check if any buffered messages are ready to be released
+                    self.process_buffers();
                     self.send_outgoing_msgs();
                 },
                 _ = self.network.cluster_messages.recv_many(&mut cluster_msg_buf, NETWORK_BATCH_SIZE) => {
@@ -112,15 +167,17 @@ impl OmniPaxosServer {
     }
 
     fn handle_decided_entries(&mut self) {
-        // TODO: Can use a read_raw here to avoid allocation
         let new_decided_idx = self.omnipaxos.get_decided_idx();
         if self.current_decided_idx < new_decided_idx {
+            let current_time_us = self.get_time();
+
             let decided_entries = self
                 .omnipaxos
                 .read_decided_suffix(self.current_decided_idx)
                 .unwrap();
             self.current_decided_idx = new_decided_idx;
-            debug!("Decided {new_decided_idx}");
+            debug!("Decided {} at time {} us", new_decided_idx, current_time_us);
+
             let decided_commands = decided_entries
                 .into_iter()
                 .filter_map(|e| match e {
@@ -133,7 +190,6 @@ impl OmniPaxosServer {
     }
 
     fn update_database_and_respond(&mut self, commands: Vec<Command>) {
-        // TODO: batching responses possible here (batch at handle_cluster_messages)
         for command in commands {
             let read = self.database.handle_command(command.kv_cmd);
             if command.coordinator_id == self.id {
@@ -159,8 +215,10 @@ impl OmniPaxosServer {
     async fn handle_client_messages(&mut self, messages: &mut Vec<(ClientId, ClientMessage)>) {
         for (from, message) in messages.drain(..) {
             match message {
-                ClientMessage::Append(command_id, kv_command) => {
-                    self.append_to_log(from, command_id, kv_command)
+                ClientMessage::Append(command_id, kv_command, deadline_offset_us) => {
+                    let current_time_us = self.get_time() as i64;
+                    let absolute_deadline_us = current_time_us + deadline_offset_us;
+                    self.append_to_log(from, command_id, kv_command, absolute_deadline_us)
                 }
             }
         }
@@ -190,16 +248,69 @@ impl OmniPaxosServer {
         received_start_signal
     }
 
-    fn append_to_log(&mut self, from: ClientId, command_id: CommandId, kv_command: KVCommand) {
+    fn append_to_log(
+        &mut self,
+        from: ClientId,
+        command_id: CommandId,
+        kv_command: KVCommand,
+        deadline_us: i64,
+    ) {
         let command = Command {
             client_id: from,
             coordinator_id: self.id,
             id: command_id,
             kv_cmd: kv_command,
+            deadline_us, // Use the passed deadline
         };
-        self.omnipaxos
-            .append(command)
-            .expect("Append to Omnipaxos log failed");
+
+        let current_time = self.get_time() as i64;
+        let uncertainty = self.get_uncertainty() as i64;
+
+        // Route to the appropriate buffer based on deadline AND uncertainty window
+        // If it arrives after (deadline - uncertainty), it's too risky to fast-path
+        if current_time >= deadline_us - uncertainty {
+            debug!(
+                "Late arrival or overlapping uncertainty for Command {}",
+                command_id
+            );
+            self.late_buffer.push(command);
+        } else {
+            trace!("Early arrival for Command {}, buffering.", command_id);
+            self.early_buffer.push(BufferedCommand(command));
+        }
+    }
+
+    // --- Process the buffers based on time ---
+    fn process_buffers(&mut self) {
+        let current_time = self.get_time() as i64;
+        let uncertainty = self.get_uncertainty() as i64;
+
+        // 1. Release Rule
+        while let Some(top) = self.early_buffer.peek() {
+            // Safe release: current_time must be >= deadline + uncertainty
+            if current_time >= top.0.deadline_us + uncertainty {
+                let cmd = self.early_buffer.pop().unwrap().0;
+                debug!("Releasing Command {} from early buffer", cmd.id);
+                self.omnipaxos
+                    .append(cmd)
+                    .expect("Append to Omnipaxos log failed");
+            } else {
+                break;
+            }
+        }
+
+        // 2. Leader Intervention (Arbitrate late buffer)
+        // Drain the late buffer on ALL nodes.
+        // If it's a follower, OmniPaxos automatically forwards it to the leader for arbitration.
+        for cmd in self.late_buffer.drain(..) {
+            warn!(
+                "Sending late/uncertain Command {} for leader arbitration",
+                cmd.id
+            );
+            self.omnipaxos
+                .append(cmd)
+                .expect("Append to Omnipaxos log failed");
+        }
     }
 
     fn send_cluster_start_signals(&mut self, start_time: Timestamp) {
@@ -224,5 +335,15 @@ impl OmniPaxosServer {
         output_file.write_all(config_json.as_bytes())?;
         output_file.flush()?;
         Ok(())
+    }
+
+    pub fn get_time(&self) -> u128 {
+        let mut clock = self.clock.lock().unwrap();
+        clock.get_time()
+    }
+
+    pub fn get_uncertainty(&self) -> u64 {
+        let clock = self.clock.lock().unwrap();
+        clock.get_uncertainty()
     }
 }
