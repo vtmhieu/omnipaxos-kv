@@ -8,7 +8,6 @@ use omnipaxos::{
 };
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
-use rand::Rng;
 use serde::Serialize;
 use std::{fs::File, io::Write, time::Duration};
 
@@ -26,6 +25,7 @@ pub struct OmniPaxosServer {
     omnipaxos_msg_buffer: Vec<Message<Command>>,
     config: OmniPaxosKVConfig,
     peers: Vec<NodeId>,
+    consistency_check: bool,
 }
 
 impl OmniPaxosServer {
@@ -46,16 +46,19 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
+            consistency_check: false
         }
     }
 
     pub async fn run(&mut self) {
         // Save config to output file
-        let path = format!(
-        "{}-decided-log.json",
-        self.config.local.output_filepath.trim_end_matches(".json")
-        );
-        let _ = std::fs::remove_file(&path);
+        if self.consistency_check {
+            let path = format!(
+            "{}-decided-log.json",
+            self.config.local.output_filepath.trim_end_matches(".json")
+            );
+            let _ = std::fs::remove_file(&path);
+        }
         self.save_output().expect("Failed to write to file");
         let mut client_msg_buf = Vec::with_capacity(NETWORK_BATCH_SIZE);
         let mut cluster_msg_buf = Vec::with_capacity(NETWORK_BATCH_SIZE);
@@ -65,17 +68,11 @@ impl OmniPaxosServer {
         // Main event loop with leader election
         let mut election_interval = tokio::time::interval(ELECTION_TIMEOUT);
 
-        let first_snapshot_timer = Duration::from_millis(rand::thread_rng().gen_range(1800..2200));
-        let mut snapshot_interval = tokio::time::interval(first_snapshot_timer); 
-
         loop {
             tokio::select! {
                 _ = election_interval.tick() => {
                     self.omnipaxos.tick();
                     self.send_outgoing_msgs();
-                },
-                _ = snapshot_interval.tick() => {        // ← add this arm
-                    self.snapshot_decided_log();
                 },
                 _ = self.network.cluster_messages.recv_many(&mut cluster_msg_buf, NETWORK_BATCH_SIZE) => {
                     self.handle_cluster_messages(&mut cluster_msg_buf).await;
@@ -143,6 +140,9 @@ impl OmniPaxosServer {
                 })
                 .collect();
             self.update_database_and_respond(decided_commands);
+            if self.consistency_check {
+                self.snapshot_decided_log();
+            }
         }
     }
 
