@@ -30,7 +30,6 @@ impl SimulatedClock {
 
         // Resync logic
         if now.duration_since(self.last_sync) >= self.sync_interval {
-            println!("Resync time");
             self.last_sync = now;
         }
 
