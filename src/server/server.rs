@@ -8,6 +8,7 @@ use omnipaxos::{
 };
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
+use serde::Serialize;
 use std::{fs::File, io::Write, time::Duration};
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
@@ -24,6 +25,7 @@ pub struct OmniPaxosServer {
     omnipaxos_msg_buffer: Vec<Message<Command>>,
     config: OmniPaxosKVConfig,
     peers: Vec<NodeId>,
+    consistency_check: bool,
 }
 
 impl OmniPaxosServer {
@@ -44,11 +46,19 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
+            consistency_check: false
         }
     }
 
     pub async fn run(&mut self) {
         // Save config to output file
+        if self.consistency_check {
+            let path = format!(
+            "{}-decided-log.json",
+            self.config.local.output_filepath.trim_end_matches(".json")
+            );
+            let _ = std::fs::remove_file(&path);
+        }
         self.save_output().expect("Failed to write to file");
         let mut client_msg_buf = Vec::with_capacity(NETWORK_BATCH_SIZE);
         let mut cluster_msg_buf = Vec::with_capacity(NETWORK_BATCH_SIZE);
@@ -57,6 +67,7 @@ impl OmniPaxosServer {
             .await;
         // Main event loop with leader election
         let mut election_interval = tokio::time::interval(ELECTION_TIMEOUT);
+
         loop {
             tokio::select! {
                 _ = election_interval.tick() => {
@@ -129,6 +140,59 @@ impl OmniPaxosServer {
                 })
                 .collect();
             self.update_database_and_respond(decided_commands);
+            if self.consistency_check {
+                self.snapshot_decided_log();
+            }
+        }
+    }
+
+    pub fn get_decided_log(&self) -> Vec<Command> {
+        self.omnipaxos
+            .read_decided_suffix(0)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|e| match e {
+                LogEntry::Decided(cmd) => Some(cmd),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn snapshot_decided_log(&self) {
+        let log = self.get_decided_log();
+
+        #[derive(Serialize)]
+        struct CommandEntry {
+            idx: usize,
+            op: String,
+        }
+
+        let commands: Vec<CommandEntry> = log.iter().enumerate().map(|(idx, cmd)| {
+            let op = match &cmd.kv_cmd {
+                KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
+                KVCommand::Get(key) => format!("Get({})", key),
+                KVCommand::Delete(key) => format!("Delete({})", key),
+            };
+            CommandEntry { idx, op }
+        }).collect();
+
+        let path = format!(
+            "{}-decided-log.json",
+            self.config.local.output_filepath.trim_end_matches(".json")
+        );
+
+        let mut snapshots: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
+            serde_json::from_str(&contents).unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        snapshots.push(serde_json::to_value(&commands).unwrap());
+
+        if let Ok(json) = serde_json::to_string_pretty(&snapshots) {
+            if let Ok(mut f) = File::create(&path) {
+                let _ = f.write_all(json.as_bytes());
+            }
         }
     }
 
