@@ -1,0 +1,17 @@
+{
+  "location": "bench-client-1",
+  "server_id": 1,
+  "server_address": "127.0.0.1:8001",
+  "requests": [
+    {
+      "duration_sec": 30,
+      "requests_per_sec": 20,
+      "read_ratio": 0.5
+    }
+  ],
+  "sync_time": 2000,
+  "summary_filepath": "/Users/hieuvutongminh/KTH/2025.2.1/AdvancedDistributedSystems/omnipaxos-kv/build_scripts/bench-logs/medium/run-0/client-1.json",
+  "output_filepath": "/Users/hieuvutongminh/KTH/2025.2.1/AdvancedDistributedSystems/omnipaxos-kv/build_scripts/bench-logs/medium/run-0/client-1.csv",
+  "deadline_min_us": 50,
+  "deadline_max_us": 2000
+}

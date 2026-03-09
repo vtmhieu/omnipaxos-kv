@@ -16,6 +16,31 @@ pub struct ClusterConfig {
     pub initial_flexible_quorum: Option<FlexibleQuorum>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ClockConfig {
+    /// Clock drift rate in microseconds per second
+    #[serde(default = "default_drift_rate")]
+    pub drift_rate_us_per_s: f64,
+    /// Synchronization uncertainty bound (±ε microseconds)
+    #[serde(default = "default_uncertainty_bound")]
+    pub uncertainty_us: u64,
+    /// Synchronization interval in milliseconds
+    #[serde(default = "default_sync_interval_ms")]
+    pub sync_interval_ms: u64,
+}
+
+fn default_drift_rate() -> f64 {
+    0.0 // Default: no drift
+}
+
+fn default_uncertainty_bound() -> u64 {
+    100_000 // Default: ±100ms (100,000 microseconds)
+}
+
+fn default_sync_interval_ms() -> u64 {
+    10_000 // Default: 10 seconds (10,000 milliseconds)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LocalConfig {
     pub location: Option<String>,
@@ -24,6 +49,9 @@ pub struct LocalConfig {
     pub listen_port: u16,
     pub num_clients: usize,
     pub output_filepath: String,
+    /// Clock configuration (optional, uses defaults if not specified)
+    #[serde(default)]
+    pub clock: ClockConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

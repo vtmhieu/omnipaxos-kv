@@ -4,3 +4,9 @@ num_clients = 0 # Hardcoded number of client connections to wait for
 listen_address = "127.0.0.1"
 listen_port = 8003
 output_filepath = "./logs/server-3.json"
+
+# Clock configuration (optional - defaults will be used if not specified)
+[clock]
+drift_rate_us_per_s = 0.0        # Clock drift rate in microseconds per second
+uncertainty_us = 1000            # Synchronization uncertainty bound (±ε microseconds)
+sync_interval_ms = 100           # Synchronization interval in milliseconds

@@ -1,10 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
+from typing import Optional
 
 import toml
 
 from gcp_cluster import InstanceConfig
+
+
+@dataclass(frozen=True)
+class ClockConfig:
+    """Clock quality settings that map directly to the [clock] TOML section."""
+    drift_rate_us_per_s: float = 0.0    # microseconds of drift per second
+    uncertainty_us: int = 10            # ±ε synchronization bound in microseconds
+    sync_interval_ms: int = 1           # resync period in milliseconds
+
+    # Convenience constructors for the three required quality levels
+    @staticmethod
+    def high() -> ClockConfig:
+        return ClockConfig(drift_rate_us_per_s=5.0, uncertainty_us=10, sync_interval_ms=1)
+
+    @staticmethod
+    def medium() -> ClockConfig:
+        return ClockConfig(drift_rate_us_per_s=50.0, uncertainty_us=100, sync_interval_ms=10)
+
+    @staticmethod
+    def low() -> ClockConfig:
+        return ClockConfig(drift_rate_us_per_s=500.0, uncertainty_us=1000, sync_interval_ms=100)
+
 
 
 @dataclass(frozen=True)
@@ -96,6 +119,7 @@ class ServerConfig:
         listen_port: int
         num_clients: int
         output_filepath: str
+        clock: Optional[ClockConfig] = None  # None → server uses its own TOML defaults
 
     def __post_init__(self):
         self.validate()
@@ -125,8 +149,20 @@ class ServerConfig:
         return new_config
 
     def generate_server_toml(self) -> str:
-        server_toml_str = toml.dumps(asdict(self.omnipaxos_server_config))
-        return server_toml_str
+        op = self.omnipaxos_server_config
+        # Build a plain dict for the top-level fields (exclude clock)
+        d = {
+            "location": op.location,
+            "server_id": op.server_id,
+            "listen_address": op.listen_address,
+            "listen_port": op.listen_port,
+            "num_clients": op.num_clients,
+            "output_filepath": op.output_filepath,
+        }
+        if op.clock is not None:
+            d["clock"] = asdict(op.clock)
+        return toml.dumps(d)
+
 
 
 @dataclass(frozen=True)

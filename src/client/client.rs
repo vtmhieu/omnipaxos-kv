@@ -13,23 +13,30 @@ pub struct Client {
     network: Network,
     client_data: ClientData,
     config: ClientConfig,
-    active_server: NodeId,
+    // NEZHA FIX: Replaced active_server with a list of all connected servers for multicasting
+    connected_servers: Vec<NodeId>,
     final_request_count: Option<usize>,
     next_request_id: usize,
 }
 
 impl Client {
     pub async fn new(config: ClientConfig) -> Self {
-        let network = Network::new(
-            vec![(config.server_id, config.server_address.clone())],
-            NETWORK_BATCH_SIZE,
-        )
-        .await;
+        // NEZHA FIX: To multicast, the client needs to connect to ALL servers.
+        // TODO: Update your ClientConfig so it provides a list of all server addresses in the cluster.
+        // For example, it might look like: let servers = config.cluster_addresses.clone();
+
+        // Temporarily using the single server until you update your config:
+        let servers = vec![(config.server_id, config.server_address.clone())];
+
+        let connected_servers: Vec<NodeId> = servers.iter().map(|(id, _)| *id).collect();
+
+        let network = Network::new(servers, NETWORK_BATCH_SIZE).await;
+
         Client {
             id: config.server_id,
             network,
             client_data: ClientData::new(),
-            active_server: config.server_id,
+            connected_servers,
             config,
             final_request_count: None,
             next_request_id: 0,
@@ -122,9 +129,24 @@ impl Client {
             true => KVCommand::Put(key.clone(), key),
             false => KVCommand::Get(key),
         };
-        let request = ClientMessage::Append(self.next_request_id, cmd);
-        debug!("Sending {request:?}");
-        self.network.send(self.active_server, request).await;
+
+        // Deadline window comes from config so benchmark scripts can vary it
+        let mut rng = rand::thread_rng();
+        let deadline_offset_us = rng.gen_range(
+            self.config.deadline_min_us..=self.config.deadline_max_us
+        );
+        let request = ClientMessage::Append(self.next_request_id, cmd, deadline_offset_us);
+
+        debug!(
+            "Multicasting {request:?} with deadline offset {}us",
+            deadline_offset_us
+        );
+
+        // NEZHA FIX: Multicast the request to all connected replicas simultaneously
+        for server_id in &self.connected_servers {
+            self.network.send(*server_id, request.clone()).await;
+        }
+
         self.client_data.new_request(is_write);
         self.next_request_id += 1;
     }
@@ -141,9 +163,6 @@ impl Client {
     // Wait until the scheduled start time to synchronize client starts.
     // If start time has already passed, start immediately.
     async fn wait_until_sync_time(config: &mut ClientConfig, scheduled_start_utc_ms: i64) {
-        // // Desync the clients a bit
-        // let mut rng = rand::thread_rng();
-        // let scheduled_start_utc_ms = scheduled_start_utc_ms + rng.gen_range(1..100);
         let now = Utc::now();
         let milliseconds_until_sync = scheduled_start_utc_ms - now.timestamp_millis();
         config.sync_time = Some(milliseconds_until_sync);

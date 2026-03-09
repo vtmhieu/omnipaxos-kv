@@ -1,0 +1,11 @@
+location = "bench-medium-3"
+server_id = 3
+num_clients = 0
+listen_address = "127.0.0.1"
+listen_port = 8003
+output_filepath = "./bench-logs/medium/server-3.json"
+
+[clock]
+drift_rate_us_per_s = 50.0
+uncertainty_us = 100
+sync_interval_ms = 10
