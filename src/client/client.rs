@@ -130,9 +130,11 @@ impl Client {
             false => KVCommand::Get(key),
         };
 
-        // Randomize the deadline to stress-test the server buffers
+        // Deadline window comes from config so benchmark scripts can vary it
         let mut rng = rand::thread_rng();
-        let deadline_offset_us = rng.gen_range(5_000..500_000);
+        let deadline_offset_us = rng.gen_range(
+            self.config.deadline_min_us..=self.config.deadline_max_us
+        );
         let request = ClientMessage::Append(self.next_request_id, cmd, deadline_offset_us);
 
         debug!(

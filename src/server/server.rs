@@ -8,8 +8,37 @@ use omnipaxos::{
 };
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
+use serde::Serialize;
 use std::{cmp::Ordering, collections::BinaryHeap, sync::Mutex};
 use std::{fs::File, io::Write, time::Duration};
+
+// ---------------------------------------------------------------------------
+// Metrics
+// ---------------------------------------------------------------------------
+#[derive(Debug, Default, Serialize, Clone)]
+pub struct MetricsState {
+    pub fast_path_count: u64,              // requests released via early-buffer
+    pub slow_path_count: u64,              // requests processed via late-buffer
+    pub committed_count: u64,              // total commands decided
+    pub total_consensus_latency_us: i64,   // sum of (decide_time - enqueue_time) in µs
+}
+
+impl MetricsState {
+    pub fn avg_consensus_latency_us(&self) -> f64 {
+        if self.committed_count == 0 {
+            return 0.0;
+        }
+        self.total_consensus_latency_us as f64 / self.committed_count as f64
+    }
+
+    pub fn fast_path_ratio(&self) -> f64 {
+        let total = self.fast_path_count + self.slow_path_count;
+        if total == 0 {
+            return 0.0;
+        }
+        self.fast_path_count as f64 / total as f64
+    }
+}
 
 // --- Add the Wrapper for BinaryHeap Ordering ---
 #[derive(Clone, Debug)]
@@ -56,9 +85,9 @@ pub struct OmniPaxosServer {
     peers: Vec<NodeId>,
     clock: Mutex<crate::clock::SimulatedClock>,
 
-    // Updated to use the wrapper and pure Command
     early_buffer: BinaryHeap<BufferedCommand>,
     late_buffer: Vec<Command>,
+    metrics: MetricsState,
 }
 
 impl OmniPaxosServer {
@@ -91,6 +120,7 @@ impl OmniPaxosServer {
             clock,
             early_buffer: BinaryHeap::new(),
             late_buffer: Vec::new(),
+            metrics: MetricsState::default(),
         }
     }
 
@@ -186,11 +216,24 @@ impl OmniPaxosServer {
                 })
                 .collect();
             self.update_database_and_respond(decided_commands);
+
+            // Flush metrics after every batch of decided entries so the output file
+            // is always current even if the process is killed without graceful shutdown.
+            if let Err(e) = self.save_output() {
+                warn!("Failed to flush metrics to output file: {e}");
+            }
         }
     }
 
+
     fn update_database_and_respond(&mut self, commands: Vec<Command>) {
+        let now_us = Utc::now().timestamp_micros();
         for command in commands {
+            // Accumulate consensus latency
+            let latency = now_us - command.enqueue_time_us;
+            self.metrics.total_consensus_latency_us += latency;
+            self.metrics.committed_count += 1;
+
             let read = self.database.handle_command(command.kv_cmd);
             if command.coordinator_id == self.id {
                 let response = match read {
@@ -255,27 +298,31 @@ impl OmniPaxosServer {
         kv_command: KVCommand,
         deadline_us: i64,
     ) {
+        let enqueue_time_us = Utc::now().timestamp_micros();
         let command = Command {
             client_id: from,
             coordinator_id: self.id,
             id: command_id,
             kv_cmd: kv_command,
-            deadline_us, // Use the passed deadline
+            deadline_us,
+            enqueue_time_us,
         };
 
         let current_time = self.get_time() as i64;
         let uncertainty = self.get_uncertainty() as i64;
 
-        // Route to the appropriate buffer based on deadline AND uncertainty window
-        // If it arrives after (deadline - uncertainty), it's too risky to fast-path
+        // Route to the appropriate buffer based on deadline AND uncertainty window.
+        // If current_time >= deadline - ε the true deadline may already have passed → slow path.
         if current_time >= deadline_us - uncertainty {
             debug!(
-                "Late arrival or overlapping uncertainty for Command {}",
+                "Late arrival or overlapping uncertainty for Command {} (slow path)",
                 command_id
             );
+            self.metrics.slow_path_count += 1;
             self.late_buffer.push(command);
         } else {
-            trace!("Early arrival for Command {}, buffering.", command_id);
+            trace!("Early arrival for Command {} (fast path)", command_id);
+            self.metrics.fast_path_count += 1;
             self.early_buffer.push(BufferedCommand(command));
         }
     }
@@ -330,9 +377,21 @@ impl OmniPaxosServer {
     }
 
     fn save_output(&mut self) -> Result<(), std::io::Error> {
-        let config_json = serde_json::to_string_pretty(&self.config)?;
+        // Build a combined output document with config + metrics
+        let output = serde_json::json!({
+            "config": &self.config,
+            "metrics": {
+                "fast_path_count": self.metrics.fast_path_count,
+                "slow_path_count": self.metrics.slow_path_count,
+                "committed_count": self.metrics.committed_count,
+                "fast_path_ratio": self.metrics.fast_path_ratio(),
+                "avg_consensus_latency_us": self.metrics.avg_consensus_latency_us(),
+                "total_consensus_latency_us": self.metrics.total_consensus_latency_us,
+            }
+        });
+        let output_json = serde_json::to_string_pretty(&output)?;
         let mut output_file = File::create(&self.config.local.output_filepath)?;
-        output_file.write_all(config_json.as_bytes())?;
+        output_file.write_all(output_json.as_bytes())?;
         output_file.flush()?;
         Ok(())
     }

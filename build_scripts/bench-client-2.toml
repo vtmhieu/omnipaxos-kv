@@ -1,0 +1,12 @@
+location = "bench-client-2"
+server_id = 2
+server_address = "127.0.0.1:8002"
+summary_filepath = "./bench-logs/QUALITY/client-2.json"
+output_filepath  = "./bench-logs/QUALITY/client-2.csv"
+deadline_min_us  = 50
+deadline_max_us  = 2000
+
+[[requests]]
+duration_sec = 30
+requests_per_sec = 20
+read_ratio = 0.5

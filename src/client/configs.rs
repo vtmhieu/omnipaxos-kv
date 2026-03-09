@@ -13,7 +13,17 @@ pub struct ClientConfig {
     pub sync_time: Option<Timestamp>,
     pub summary_filepath: String,
     pub output_filepath: String,
+    /// Minimum deadline offset sent with each request (µs). Default: 5 000 µs.
+    #[serde(default = "default_deadline_min_us")]
+    pub deadline_min_us: i64,
+    /// Maximum deadline offset sent with each request (µs). Default: 500 000 µs.
+    #[serde(default = "default_deadline_max_us")]
+    pub deadline_max_us: i64,
 }
+
+fn default_deadline_min_us() -> i64 { 5_000 }
+fn default_deadline_max_us() -> i64 { 500_000 }
+
 
 impl ClientConfig {
     pub fn new() -> Result<Self, ConfigError> {

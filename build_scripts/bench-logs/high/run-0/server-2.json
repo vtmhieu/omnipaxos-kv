@@ -1,0 +1,38 @@
+{
+  "config": {
+    "clock": {
+      "drift_rate_us_per_s": 5.0,
+      "sync_interval_ms": 1,
+      "uncertainty_us": 10
+    },
+    "initial_flexible_quorum": {
+      "read_quorum_size": 2,
+      "write_quorum_size": 2
+    },
+    "initial_leader": 1,
+    "listen_address": "127.0.0.1",
+    "listen_port": 8002,
+    "location": "bench-high-2",
+    "node_addrs": [
+      "127.0.0.1:8001",
+      "127.0.0.1:8002",
+      "127.0.0.1:8003"
+    ],
+    "nodes": [
+      1,
+      2,
+      3
+    ],
+    "num_clients": 1,
+    "output_filepath": "/Users/hieuvutongminh/KTH/2025.2.1/AdvancedDistributedSystems/omnipaxos-kv/build_scripts/bench-logs/high/run-0/server-2.json",
+    "server_id": 2
+  },
+  "metrics": {
+    "avg_consensus_latency_us": 10028.734166666667,
+    "committed_count": 1200,
+    "fast_path_count": 600,
+    "fast_path_ratio": 1.0,
+    "slow_path_count": 0,
+    "total_consensus_latency_us": 12034481
+  }
+}

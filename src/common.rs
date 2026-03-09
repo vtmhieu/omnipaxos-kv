@@ -52,16 +52,17 @@ pub mod kv {
     pub type NodeId = omnipaxos::util::NodeId;
     pub type InstanceId = NodeId;
 
-    #[derive(Debug, Clone, Entry, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Entry, Serialize, Deserialize, PartialEq, Eq)]
     pub struct Command {
         pub client_id: ClientId,
         pub coordinator_id: NodeId,
         pub id: CommandId,
         pub kv_cmd: KVCommand,
-        pub deadline_us: i64, // Absolute deadline in microseconds since epoch
+        pub deadline_us: i64,     // Absolute deadline in microseconds (simulated clock)
+        pub enqueue_time_us: i64, // Real wall-clock UTC micros when server enqueued this command
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub enum KVCommand {
         Put(String, String),
         Delete(String),
