@@ -3,7 +3,7 @@ use chrono::Utc;
 use log::*;
 use omnipaxos_kv::common::{kv::*, messages::*};
 use rand::Rng;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time::interval;
 
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -16,6 +16,8 @@ pub struct Client {
     active_server: NodeId,
     final_request_count: Option<usize>,
     next_request_id: usize,
+    latency_sum: u128,
+    start_time: Instant
 }
 
 impl Client {
@@ -33,6 +35,8 @@ impl Client {
             config,
             final_request_count: None,
             next_request_id: 0,
+            latency_sum: 0,
+            start_time: Instant::now()
         }
     }
 
@@ -112,6 +116,7 @@ impl Client {
             server_response => {
                 let cmd_id = server_response.command_id();
                 self.client_data.new_response(cmd_id);
+                self.latency_sum += self.client_data.response_latency(cmd_id) as u128;
             }
         }
     }
@@ -132,6 +137,11 @@ impl Client {
     fn run_finished(&self) -> bool {
         if let Some(count) = self.final_request_count {
             if self.client_data.request_count() >= count {
+                let end_time = Instant::now();
+                debug!("Total Latency: {}", self.latency_sum);
+                debug!("Total Count: {}", self.client_data.response_count());
+                debug!("Total Runtime: {}", end_time.duration_since(self.start_time).as_millis());
+                debug!("Throughput: {} ops/sec", (self.client_data.response_count() as f64) / (end_time.duration_since(self.start_time).as_secs_f64()));
                 return true;
             }
         }
