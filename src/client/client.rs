@@ -3,7 +3,7 @@ use chrono::Utc;
 use log::*;
 use omnipaxos_kv::common::{kv::*, messages::*};
 use rand::Rng;
-use std::time::{Duration, Instant};
+use std::{fs::File, io::Write, time::{Duration, Instant}};
 use tokio::time::interval;
 
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -17,7 +17,8 @@ pub struct Client {
     final_request_count: Option<usize>,
     next_request_id: usize,
     latency_sum: u128,
-    start_time: Instant
+    start_time: Instant,
+    metric_report: bool
 }
 
 impl Client {
@@ -36,12 +37,20 @@ impl Client {
             final_request_count: None,
             next_request_id: 0,
             latency_sum: 0,
-            start_time: Instant::now()
+            start_time: Instant::now(),
+            metric_report: false
         }
     }
 
     pub async fn run(&mut self) {
         // Wait for server to signal start
+        if self.metric_report{
+            let path = format!(
+            "{}-metrics.json",
+            self.config.output_filepath.trim_end_matches(".csv")
+            );
+            let _ = std::fs::remove_file(&path);
+        }
         info!("{}: Waiting for start signal from server", self.id);
         match self.network.server_messages.recv().await {
             Some(ServerMessage::StartSignal(start_time)) => {
@@ -137,11 +146,6 @@ impl Client {
     fn run_finished(&self) -> bool {
         if let Some(count) = self.final_request_count {
             if self.client_data.request_count() >= count {
-                let end_time = Instant::now();
-                debug!("Total Latency: {}", self.latency_sum);
-                debug!("Total Count: {}", self.client_data.response_count());
-                debug!("Total Runtime: {}", end_time.duration_since(self.start_time).as_millis());
-                debug!("Throughput: {} ops/sec", (self.client_data.response_count() as f64) / (end_time.duration_since(self.start_time).as_secs_f64()));
                 return true;
             }
         }
@@ -168,6 +172,41 @@ impl Client {
         self.client_data.save_summary(self.config.clone())?;
         self.client_data
             .to_csv(self.config.output_filepath.clone())?;
+        if self.metric_report {
+            self.save_metrics()?;
+        }
+        Ok(())
+    }
+
+    pub fn save_metrics(&self) -> Result<(), std::io::Error> {
+        let path = format!(
+            "{}-metrics.json",
+            self.config.output_filepath.trim_end_matches(".csv")
+        );
+        let mut metrics_file: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
+            serde_json::from_str(&contents).unwrap_or_default()
+        } else {
+            vec![]
+        };
+        let end_time = Instant::now();
+        let total_runtime = end_time.duration_since(self.start_time).as_millis();
+        let throughput = (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);
+
+        let metrics = serde_json::json!({
+            "total_latency_ms": self.latency_sum,
+            "response_count": self.client_data.response_count(),
+            "runtime_ms": total_runtime,
+            "throughput_ops_per_sec": throughput,
+            "avg_latency_ms": if self.client_data.response_count() > 0 { self.latency_sum / self.client_data.response_count() as u128 } else { 0 }
+        });
+
+        metrics_file.push(serde_json::to_value(&metrics).unwrap());
+
+        if let Ok(json) = serde_json::to_string_pretty(&metrics_file) {
+            if let Ok(mut f) = File::create(&path) {
+                let _ = f.write_all(json.as_bytes());
+            }
+        }
         Ok(())
     }
 }
