@@ -60,3 +60,7 @@ Temporary Items
 *.icloud
 
 # End of https://www.toptal.com/developers/gitignore/api/macos
+
+# ignore the dockerfiles as we all have differenct machines that are idiot machines
+client.dockerfile
+server.dockerfile
