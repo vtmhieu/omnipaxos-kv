@@ -46,6 +46,7 @@ pub mod kv {
     use omnipaxos::{macros::Entry, storage::Snapshot};
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
+    use super::utils::Timestamp;
 
     pub type CommandId = usize;
     pub type ClientId = u64;
@@ -58,6 +59,7 @@ pub mod kv {
         pub coordinator_id: NodeId,
         pub id: CommandId,
         pub kv_cmd: KVCommand,
+        pub deadline: Timestamp,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +114,17 @@ pub mod kv {
         fn use_snapshots() -> bool {
             true
         }
+    }
+}
+
+pub mod clock_c {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct ClockConfig {
+        pub drift_per_sec: f64,
+        pub uncertainty_us: u64,
+        pub sync_interval_ms: u64,
     }
 }
 

@@ -20,7 +20,7 @@ impl SimulatedClock {
         }
     }
 
-    pub fn get_time(&mut self) -> u128 {
+    pub fn get_time(&mut self) -> i64 {
         let now = Instant::now();
         let elapsed = now.duration_since(self.start_instant);
 
@@ -32,9 +32,9 @@ impl SimulatedClock {
         let elapsed_from_last_sync = now.duration_since(self.last_sync);
 
         // Apply drift
-        let drift = elapsed_from_last_sync.as_secs_f64() * self.drift_per_sec;
+        let drift = elapsed_from_last_sync.as_secs_f64() * self.drift_per_sec * 1_000_000.0;
 
-        elapsed.as_micros() + (drift as u128)
+       elapsed.as_micros() as i64 + drift as i64
     }
 
     pub fn get_uncertainty(&self) -> u64 {

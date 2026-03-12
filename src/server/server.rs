@@ -6,16 +6,17 @@ use omnipaxos::{
     util::{LogEntry, NodeId},
     OmniPaxos, OmniPaxosConfig,
 };
-use omnipaxos_kv::clock::SimulatedClock;
-use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
+use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp, clock_c::*};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use serde::Serialize;
 use std::{fs::File, io::Write, time::Duration};
+use omnipaxos_kv::clock::SimulatedClock;
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
 const NETWORK_BATCH_SIZE: usize = 100;
 const LEADER_WAIT: Duration = Duration::from_secs(1);
 const ELECTION_TIMEOUT: Duration = Duration::from_secs(1);
+const LATENCY_BOUND_US: i64 = 200;
 
 pub struct OmniPaxosServer {
     id: NodeId,
@@ -27,6 +28,7 @@ pub struct OmniPaxosServer {
     config: OmniPaxosKVConfig,
     peers: Vec<NodeId>,
     consistency_check: bool,
+    clock: SimulatedClock,
 }
 
 impl OmniPaxosServer {
@@ -38,6 +40,13 @@ impl OmniPaxosServer {
         let omnipaxos = omnipaxos_config.build(storage).unwrap();
         // Waits for client and server network connections to be established
         let network = Network::new(config.clone(), NETWORK_BATCH_SIZE).await;
+
+        let clock = SimulatedClock::new(
+            config.local.clock.drift_per_sec,
+            config.local.clock.uncertainty_us,
+            Duration::from_millis(config.local.clock.sync_interval_ms),
+        );
+
         OmniPaxosServer {
             id: config.local.server_id,
             database: Database::new(),
@@ -48,6 +57,7 @@ impl OmniPaxosServer {
             peers: config.get_peers(config.local.server_id),
             config,
             consistency_check: false,
+            clock
         }
     }
 
@@ -55,8 +65,8 @@ impl OmniPaxosServer {
         // Save config to output file
         if self.consistency_check {
             let path = format!(
-                "{}-decided-log.json",
-                self.config.local.output_filepath.trim_end_matches(".json")
+            "{}-decided-log.json",
+            self.config.local.output_filepath.trim_end_matches(".json")
             );
             let _ = std::fs::remove_file(&path);
         }
@@ -136,7 +146,14 @@ impl OmniPaxosServer {
             let decided_commands = decided_entries
                 .into_iter()
                 .filter_map(|e| match e {
-                    LogEntry::Decided(cmd) => Some(cmd),
+                    LogEntry::Decided(cmd) => {
+                        // info!(
+                        //     "Server {} decided cmd {} deadline {}",
+                        //     self.id,
+                        //     cmd.id,
+                        //     cmd.deadline
+                        // );
+                        Some(cmd)},
                     _ => unreachable!(),
                 })
                 .collect();
@@ -168,30 +185,25 @@ impl OmniPaxosServer {
             op: String,
         }
 
-        let commands: Vec<CommandEntry> = log
-            .iter()
-            .enumerate()
-            .map(|(idx, cmd)| {
-                let op = match &cmd.kv_cmd {
-                    KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
-                    KVCommand::Get(key) => format!("Get({})", key),
-                    KVCommand::Delete(key) => format!("Delete({})", key),
-                };
-                CommandEntry { idx, op }
-            })
-            .collect();
+        let commands: Vec<CommandEntry> = log.iter().enumerate().map(|(idx, cmd)| {
+            let op = match &cmd.kv_cmd {
+                KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
+                KVCommand::Get(key) => format!("Get({})", key),
+                KVCommand::Delete(key) => format!("Delete({})", key),
+            };
+            CommandEntry { idx, op }
+        }).collect();
 
         let path = format!(
             "{}-decided-log.json",
             self.config.local.output_filepath.trim_end_matches(".json")
         );
 
-        let mut snapshots: Vec<serde_json::Value> =
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                serde_json::from_str(&contents).unwrap_or_default()
-            } else {
-                vec![]
-            };
+        let mut snapshots: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
+            serde_json::from_str(&contents).unwrap_or_default()
+        } else {
+            vec![]
+        };
 
         snapshots.push(serde_json::to_value(&commands).unwrap());
 
@@ -230,7 +242,12 @@ impl OmniPaxosServer {
         for (from, message) in messages.drain(..) {
             match message {
                 ClientMessage::Append(command_id, kv_command) => {
-                    self.append_to_log(from, command_id, kv_command)
+
+                    let current_ts = self.clock.get_time();
+                    let uncertainty = self.clock.get_uncertainty() as i64;
+                    let deadline = current_ts + uncertainty + LATENCY_BOUND_US;
+
+                    self.append_to_log(from, command_id, kv_command, deadline)
                 }
             }
         }
@@ -260,16 +277,24 @@ impl OmniPaxosServer {
         received_start_signal
     }
 
-    fn append_to_log(&mut self, from: ClientId, command_id: CommandId, kv_command: KVCommand) {
+    fn append_to_log(&mut self, from: ClientId, command_id: CommandId, kv_command: KVCommand, deadline: Timestamp) {
         let command = Command {
             client_id: from,
             coordinator_id: self.id,
             id: command_id,
             kv_cmd: kv_command,
+            deadline,
         };
         self.omnipaxos
             .append(command)
             .expect("Append to Omnipaxos log failed");
+        
+        // info!(
+        //     "Server {} appended command {} with deadline {}",
+        //     self.id,
+        //     command_id,
+        //     deadline
+        // );
     }
 
     fn send_cluster_start_signals(&mut self, start_time: Timestamp) {
