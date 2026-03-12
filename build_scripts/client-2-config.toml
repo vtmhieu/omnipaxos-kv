@@ -3,6 +3,7 @@ server_id = 2 # the server to connect to
 server_address = "127.0.0.1:8002"
 summary_filepath = "./logs/client-2.json"
 output_filepath = "./logs/client-2.csv"
+deadline_offset_ms = 0
 
 # Defining TOML vector of (duration_sec, requests_per_sec, read_ratio) which determines the behavior of the client requests
 [[requests]]
@@ -19,4 +20,3 @@ read_ratio = 0.25
 drift_per_sec = 0
 uncertainty_us = 0
 sync_interval_ms = 1
-deadline_offset_ms = 0

@@ -21,7 +21,7 @@ pub struct ClientConfig {
     pub summary_filepath: String,
     pub output_filepath: String,
     pub clock: ClockConfig,
-    pub deadline_offset_ms: u128,
+    pub deadline_offset_ms: u64,
 }
 
 impl ClientConfig {

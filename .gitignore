@@ -64,3 +64,4 @@ Temporary Items
 # ignore the dockerfiles as we all have differenct machines that are idiot machines
 client.dockerfile
 server.dockerfile
+*.dockerfile
