@@ -3,7 +3,11 @@ use chrono::Utc;
 use log::*;
 use omnipaxos_kv::common::{kv::*, messages::*};
 use rand::Rng;
-use std::{fs::File, io::Write, time::{Duration, Instant}};
+use std::{
+    fs::File,
+    io::Write,
+    time::{Duration, Instant},
+};
 use tokio::time::interval;
 
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -18,7 +22,7 @@ pub struct Client {
     next_request_id: usize,
     latency_sum: u128,
     start_time: Instant,
-    metric_report: bool
+    metric_report: bool,
 }
 
 impl Client {
@@ -38,16 +42,16 @@ impl Client {
             next_request_id: 0,
             latency_sum: 0,
             start_time: Instant::now(),
-            metric_report: false
+            metric_report: false,
         }
     }
 
     pub async fn run(&mut self) {
         // Wait for server to signal start
-        if self.metric_report{
+        if self.metric_report {
             let path = format!(
-            "{}-metrics.json",
-            self.config.output_filepath.trim_end_matches(".csv")
+                "{}-metrics.json",
+                self.config.output_filepath.trim_end_matches(".csv")
             );
             let _ = std::fs::remove_file(&path);
         }
@@ -136,7 +140,8 @@ impl Client {
             true => KVCommand::Put(key.clone(), key),
             false => KVCommand::Get(key),
         };
-        let request = ClientMessage::Append(self.next_request_id, cmd);
+        //TODO: add deadline
+        let request = ClientMessage::Append(self.next_request_id, cmd, None);
         debug!("Sending {request:?}");
         self.network.send(self.active_server, request).await;
         self.client_data.new_request(is_write);
@@ -183,14 +188,16 @@ impl Client {
             "{}-metrics.json",
             self.config.output_filepath.trim_end_matches(".csv")
         );
-        let mut metrics_file: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
-            serde_json::from_str(&contents).unwrap_or_default()
-        } else {
-            vec![]
-        };
+        let mut metrics_file: Vec<serde_json::Value> =
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                serde_json::from_str(&contents).unwrap_or_default()
+            } else {
+                vec![]
+            };
         let end_time = Instant::now();
         let total_runtime = end_time.duration_since(self.start_time).as_millis();
-        let throughput = (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);
+        let throughput =
+            (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);
 
         let metrics = serde_json::json!({
             "total_latency_ms": self.latency_sum,

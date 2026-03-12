@@ -26,6 +26,7 @@ pub struct OmniPaxosServer {
     omnipaxos_msg_buffer: Vec<Message<Command>>,
     config: OmniPaxosKVConfig,
     peers: Vec<NodeId>,
+    clock: SimulatedClock,
     consistency_check: bool,
 }
 
@@ -46,6 +47,11 @@ impl OmniPaxosServer {
             current_decided_idx: 0,
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
+            clock: SimulatedClock::new(
+                config.local.clock.drift_per_sec,
+                config.local.clock.uncertainty_us,
+                config.local.clock.sync_interval_ms,
+            ),
             config,
             consistency_check: false,
         }
@@ -229,8 +235,8 @@ impl OmniPaxosServer {
     async fn handle_client_messages(&mut self, messages: &mut Vec<(ClientId, ClientMessage)>) {
         for (from, message) in messages.drain(..) {
             match message {
-                ClientMessage::Append(command_id, kv_command) => {
-                    self.append_to_log(from, command_id, kv_command)
+                ClientMessage::Append(command_id, kv_command, deadline) => {
+                    self.append_to_log(from, command_id, kv_command, deadline);
                 }
             }
         }
@@ -260,12 +266,19 @@ impl OmniPaxosServer {
         received_start_signal
     }
 
-    fn append_to_log(&mut self, from: ClientId, command_id: CommandId, kv_command: KVCommand) {
+    fn append_to_log(
+        &mut self,
+        from: ClientId,
+        command_id: CommandId,
+        kv_command: KVCommand,
+        deadline: Option<u128>,
+    ) {
         let command = Command {
             client_id: from,
             coordinator_id: self.id,
             id: command_id,
             kv_cmd: kv_command,
+            deadline: deadline,
         };
         self.omnipaxos
             .append(command)

@@ -21,7 +21,7 @@ pub mod messages {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub enum ClientMessage {
-        Append(CommandId, KVCommand),
+        Append(CommandId, KVCommand, Option<u128>),
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -58,6 +58,7 @@ pub mod kv {
         pub coordinator_id: NodeId,
         pub id: CommandId,
         pub kv_cmd: KVCommand,
+        pub deadline: Option<u128>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

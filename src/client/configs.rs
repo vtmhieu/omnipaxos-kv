@@ -4,6 +4,13 @@ use config::{Config, ConfigError, Environment, File};
 use omnipaxos_kv::common::{kv::NodeId, utils::Timestamp};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct ClockConfig {
+    pub drift_per_sec: f64,
+    pub uncertainty_us: u64,
+    pub sync_interval_ms: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClientConfig {
     pub location: String,
@@ -13,6 +20,8 @@ pub struct ClientConfig {
     pub sync_time: Option<Timestamp>,
     pub summary_filepath: String,
     pub output_filepath: String,
+    pub clock: ClockConfig,
+    pub deadline_offset_ms: u128,
 }
 
 impl ClientConfig {

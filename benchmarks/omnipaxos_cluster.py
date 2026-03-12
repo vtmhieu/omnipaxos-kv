@@ -240,6 +240,11 @@ class OmnipaxosClusterBuilder:
                 listen_port=self._server_port,
                 num_clients=0,
                 output_filepath=f"server-{server_id}.json",
+                clock={
+                    "drift_per_sec": 0.0,
+                    "uncertainty_us": 0,
+                    "sync_interval_ms": {"secs": 1, "nanos": 0},
+                },
             ),
             rust_log=rust_log,
         )
@@ -277,6 +282,12 @@ class OmnipaxosClusterBuilder:
                 requests=requests,
                 summary_filepath=f"client-{server_id}.json",
                 output_filepath=f"client-{server_id}.csv",
+                clock={
+                    "drift_per_sec": 0.0,
+                    "uncertainty_us": 0,
+                    "sync_interval_ms": 1000,
+                },
+                deadline_offset_ms=0,
             ),
             rust_log=rust_log,
         )

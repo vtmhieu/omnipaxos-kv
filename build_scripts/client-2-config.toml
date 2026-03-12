@@ -15,3 +15,8 @@ duration_sec = 10
 requests_per_sec = 1
 read_ratio = 0.25
 
+[clock]
+drift_per_sec = 0
+uncertainty_us = 0
+sync_interval_ms = 1
+deadline_offset_ms = 0

@@ -96,6 +96,7 @@ class ServerConfig:
         listen_port: int
         num_clients: int
         output_filepath: str
+        clock: dict
 
     def __post_init__(self):
         self.validate()
@@ -143,6 +144,8 @@ class ClientConfig:
         requests: list[RequestInterval]
         summary_filepath: str
         output_filepath: str
+        clock: dict
+        deadline_offset_ms: int
 
     def __post_init__(self):
         self.validate()

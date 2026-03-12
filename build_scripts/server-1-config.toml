@@ -4,3 +4,9 @@ num_clients = 1 # Hardcoded number of client connections to wait for
 listen_address = "127.0.0.1"
 listen_port = 8001
 output_filepath = "./logs/server-1.json"
+
+[clock]
+drift_per_sec = 1
+uncertainty_us = 1
+sync_interval_ms = { secs = 1, nanos = 0 }
+deadline_offset_ms = 0

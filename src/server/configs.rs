@@ -7,6 +7,14 @@ use omnipaxos::{
     ServerConfig as OmnipaxosServerConfig,
 };
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct ClockConfig {
+    pub drift_per_sec: f64,
+    pub uncertainty_us: u64,
+    pub sync_interval_ms: Duration,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClusterConfig {
@@ -24,6 +32,7 @@ pub struct LocalConfig {
     pub listen_port: u16,
     pub num_clients: usize,
     pub output_filepath: String,
+    pub clock: ClockConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
