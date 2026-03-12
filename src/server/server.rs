@@ -6,6 +6,7 @@ use omnipaxos::{
     util::{LogEntry, NodeId},
     OmniPaxos, OmniPaxosConfig,
 };
+use omnipaxos_kv::clock::SimulatedClock;
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use serde::Serialize;
@@ -46,7 +47,7 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
-            consistency_check: false
+            consistency_check: false,
         }
     }
 
@@ -54,8 +55,8 @@ impl OmniPaxosServer {
         // Save config to output file
         if self.consistency_check {
             let path = format!(
-            "{}-decided-log.json",
-            self.config.local.output_filepath.trim_end_matches(".json")
+                "{}-decided-log.json",
+                self.config.local.output_filepath.trim_end_matches(".json")
             );
             let _ = std::fs::remove_file(&path);
         }
@@ -167,25 +168,30 @@ impl OmniPaxosServer {
             op: String,
         }
 
-        let commands: Vec<CommandEntry> = log.iter().enumerate().map(|(idx, cmd)| {
-            let op = match &cmd.kv_cmd {
-                KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
-                KVCommand::Get(key) => format!("Get({})", key),
-                KVCommand::Delete(key) => format!("Delete({})", key),
-            };
-            CommandEntry { idx, op }
-        }).collect();
+        let commands: Vec<CommandEntry> = log
+            .iter()
+            .enumerate()
+            .map(|(idx, cmd)| {
+                let op = match &cmd.kv_cmd {
+                    KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
+                    KVCommand::Get(key) => format!("Get({})", key),
+                    KVCommand::Delete(key) => format!("Delete({})", key),
+                };
+                CommandEntry { idx, op }
+            })
+            .collect();
 
         let path = format!(
             "{}-decided-log.json",
             self.config.local.output_filepath.trim_end_matches(".json")
         );
 
-        let mut snapshots: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
-            serde_json::from_str(&contents).unwrap_or_default()
-        } else {
-            vec![]
-        };
+        let mut snapshots: Vec<serde_json::Value> =
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                serde_json::from_str(&contents).unwrap_or_default()
+            } else {
+                vec![]
+            };
 
         snapshots.push(serde_json::to_value(&commands).unwrap());
 

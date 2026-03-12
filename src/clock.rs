@@ -2,25 +2,21 @@ use std::time::{Duration, Instant};
 
 pub struct SimulatedClock {
     start_instant: Instant,
-    drift_per_sec: f64,        
-    uncertainty_us: u64,       
-    sync_interval: Duration,   
+    drift_per_sec: f64,
+    uncertainty_us: u64,
+    sync_interval: Duration,
     last_sync: Instant,
 }
 
 impl SimulatedClock {
-    pub fn new(
-        drift_per_sec: f64,
-        uncertainty_us: u64,
-        sync_interval: Duration,
-    ) -> Self {
+    pub fn new(drift_per_sec: f64, uncertainty_us: u64, sync_interval: Duration) -> Self {
         let now = Instant::now();
         Self {
             start_instant: now,
             drift_per_sec,
             uncertainty_us,
             sync_interval,
-            last_sync: now
+            last_sync: now,
         }
     }
 
@@ -46,16 +42,16 @@ impl SimulatedClock {
     }
 }
 
-//for manual testing
-fn main() {
-    let mut clock = SimulatedClock::new(
-        50.0,
-        100,
-        Duration::from_secs(10),
-    );
+// //for manual testing
+// fn main() {
+//     let mut clock = SimulatedClock::new(
+//         50.0,
+//         100,
+//         Duration::from_secs(10),
+//     );
 
-    loop {
-        println!("Sim time: {}", clock.get_time());
-        std::thread::sleep(Duration::from_secs(1));
-    }
-}
+//     loop {
+//         println!("Sim time: {}", clock.get_time());
+//         std::thread::sleep(Duration::from_secs(1));
+//     }
+// }
