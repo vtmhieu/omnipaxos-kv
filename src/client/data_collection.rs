@@ -42,6 +42,10 @@ impl ClientData {
         self.response_count += 1;
     }
 
+    pub fn response_latency(&mut self, command_id: CommandId) -> i64 {
+        self.request_data[command_id].response_time.unwrap() - self.request_data[command_id].request_time
+    }
+
     pub fn response_count(&self) -> usize {
         self.response_count
     }
