@@ -43,17 +43,19 @@ pub mod messages {
 }
 
 pub mod kv {
+    use super::utils::Timestamp;
     use omnipaxos::{macros::Entry, storage::Snapshot};
     use serde::{Deserialize, Serialize};
+    use std::cmp::Eq;
+    use std::cmp::PartialEq;
     use std::collections::HashMap;
-    use super::utils::Timestamp;
 
     pub type CommandId = usize;
     pub type ClientId = u64;
     pub type NodeId = omnipaxos::util::NodeId;
     pub type InstanceId = NodeId;
 
-    #[derive(Debug, Clone, Entry, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Entry, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Command {
         pub client_id: ClientId,
         pub coordinator_id: NodeId,
@@ -62,7 +64,19 @@ pub mod kv {
         pub deadline: Timestamp,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    impl Ord for Command {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.deadline.cmp(&other.deadline)
+        }
+    }
+
+    impl PartialOrd for Command {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum KVCommand {
         Put(String, String),
         Delete(String),
