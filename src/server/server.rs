@@ -11,19 +11,19 @@ use omnipaxos_kv::common::{clock_c::*, kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use serde::Serialize;
 use std::cmp::Reverse;
-use std::collections::BinaryHeap; 
+use std::collections::BinaryHeap;
 use std::{fs::File, io::Write, time::Duration};
 
-use std::collections::{HashMap};
-use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
-
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
 const NETWORK_BATCH_SIZE: usize = 100;
 const LEADER_WAIT: Duration = Duration::from_secs(1);
 const ELECTION_TIMEOUT: Duration = Duration::from_secs(1);
 const LATENCY_BOUND_US: i64 = 200;
+const FASTPATH_INTERVAL: Duration = Duration::from_millis(1);
 
 pub struct OmniPaxosServer {
     id: NodeId,
@@ -77,7 +77,7 @@ impl OmniPaxosServer {
             early_buffer: BinaryHeap::new(),
             last_log_deadline: 0,
             fast_replies: HashMap::new(),
-             leader_responses: HashMap::new(),
+            leader_responses: HashMap::new(),
         }
     }
 
@@ -99,11 +99,15 @@ impl OmniPaxosServer {
         // Main event loop with leader election
         let mut election_interval = tokio::time::interval(ELECTION_TIMEOUT);
 
+        let mut fast_path_interval = tokio::time::interval(FASTPATH_INTERVAL);
+
         loop {
             tokio::select! {
+                _ = fast_path_interval.tick() => {
+                    self.release_from_early_buffer();
+                },
                 _ = election_interval.tick() => {
                     self.omnipaxos.tick();
-                    self.release_from_early_buffer();
                     self.send_outgoing_msgs();
                 },
                 _ = self.network.cluster_messages.recv_many(&mut cluster_msg_buf, NETWORK_BATCH_SIZE) => {
@@ -179,7 +183,7 @@ impl OmniPaxosServer {
                     _ => unreachable!(),
                 })
                 .collect();
-            
+
             // send fast reply
             let log_hash = self.log_hash();
             let is_leader = self.is_current_leader();
@@ -277,7 +281,6 @@ impl OmniPaxosServer {
     }
 
     fn update_database_and_respond(&mut self, commands: Vec<Command>) {
-
         let is_leader = self.is_current_leader();
 
         // TODO: batching responses possible here (batch at handle_cluster_messages)
@@ -286,32 +289,27 @@ impl OmniPaxosServer {
 
             if is_leader {
                 let response = match read {
-                Some(read_result) => ServerMessage::Read(command.id, read_result),
-                None => ServerMessage::Write(command.id),
+                    Some(read_result) => ServerMessage::Read(command.id, read_result),
+                    None => ServerMessage::Write(command.id),
                 };
 
                 if command.coordinator_id == self.id {
                     // Leader is coordinator
-                    self.leader_responses.insert(
-                        command.id,
-                        (command.client_id, response),
-                    );
-                } 
-                else {
+                    self.leader_responses
+                        .insert(command.id, (command.client_id, response));
+                } else {
                     // Send to coordinator
                     self.network.send_to_cluster(
                         command.coordinator_id,
-                        ClusterMessage::LeaderResponse(
-                            LeaderResponse {
-                                command_id: command.id,
-                                client_id: command.client_id,
-                                response,
-                            }
-                        ),
+                        ClusterMessage::LeaderResponse(LeaderResponse {
+                            command_id: command.id,
+                            client_id: command.client_id,
+                            response,
+                        }),
                     );
                 }
             }
-         }
+        }
     }
 
     fn send_outgoing_msgs(&mut self) {
@@ -456,7 +454,6 @@ impl OmniPaxosServer {
     }
 
     fn log_hash(&self) -> u64 {
-
         let mut hasher = DefaultHasher::new();
 
         for cmd in self.get_decided_log() {
@@ -466,9 +463,9 @@ impl OmniPaxosServer {
         hasher.finish()
     }
 
-    fn handle_fast_reply(&mut self, reply: FastReply){
-        
-        let tracker = self.fast_replies
+    fn handle_fast_reply(&mut self, reply: FastReply) {
+        let tracker = self
+            .fast_replies
             .entry(reply.command_id)
             .or_insert(FastReplyTracker {
                 leader_hash: None,
@@ -478,9 +475,7 @@ impl OmniPaxosServer {
         if reply.is_leader {
             tracker.leader_hash = Some(reply.log_hash);
         } else {
-            *tracker.follower_hashes
-                .entry(reply.log_hash)
-                .or_insert(0) += 1;
+            *tracker.follower_hashes.entry(reply.log_hash).or_insert(0) += 1;
         }
 
         let cluster_size = self.peers.len() + 1;
@@ -488,20 +483,20 @@ impl OmniPaxosServer {
         let required_followers = f + f / 2;
 
         if let Some(leader_hash) = tracker.leader_hash {
-
-            let follower_count =
-                tracker.follower_hashes.get(&leader_hash).copied().unwrap_or(0);
+            let follower_count = tracker
+                .follower_hashes
+                .get(&leader_hash)
+                .copied()
+                .unwrap_or(0);
 
             if follower_count >= required_followers {
-
                 // info!(
                 //     "Command {} committed with hash {}",
                 //     reply.command_id,
                 //     leader_hash
                 // );d
 
-                if let Some((client_id, response)) =
-                    self.leader_responses.remove(&reply.command_id)
+                if let Some((client_id, response)) = self.leader_responses.remove(&reply.command_id)
                 {
                     self.network.send_to_client(client_id, response);
                 }
@@ -509,6 +504,5 @@ impl OmniPaxosServer {
                 self.fast_replies.remove(&reply.command_id);
             }
         }
-
     }
 }
