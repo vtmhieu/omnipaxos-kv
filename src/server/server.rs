@@ -11,8 +11,13 @@ use omnipaxos_kv::common::{clock_c::*, kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use serde::Serialize;
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
-use std::{collections::BTreeMap, fs::File, io::Write, time::Duration};
+use std::collections::BinaryHeap; 
+use std::{fs::File, io::Write, time::Duration};
+
+use std::collections::{HashMap};
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
+
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -31,9 +36,15 @@ pub struct OmniPaxosServer {
     peers: Vec<NodeId>,
     consistency_check: bool,
     clock: SimulatedClock,
-
     early_buffer: BinaryHeap<Reverse<Command>>,
     last_log_deadline: Timestamp,
+    fast_replies: HashMap<CommandId, FastReplyTracker>,
+    leader_responses: HashMap<CommandId, (ClientId, ServerMessage)>,
+}
+
+struct FastReplyTracker {
+    leader_hash: Option<u64>,
+    follower_hashes: HashMap<u64, usize>,
 }
 
 impl OmniPaxosServer {
@@ -65,6 +76,8 @@ impl OmniPaxosServer {
             clock,
             early_buffer: BinaryHeap::new(),
             last_log_deadline: 0,
+            fast_replies: HashMap::new(),
+             leader_responses: HashMap::new(),
         }
     }
 
@@ -166,6 +179,33 @@ impl OmniPaxosServer {
                     _ => unreachable!(),
                 })
                 .collect();
+            
+            // send fast reply
+            let log_hash = self.log_hash();
+            let is_leader = self.is_current_leader();
+
+            for cmd in &decided_commands {
+                let cmd: &Command = cmd;
+
+                let fast_reply = FastReply {
+                    command_id: cmd.id,
+                    client_id: cmd.client_id,
+                    coordinator_id: cmd.coordinator_id,
+                    replica_id: self.id,
+                    is_leader,
+                    log_hash,
+                };
+
+                let msg = ClusterMessage::FastReply(fast_reply.clone());
+
+                if cmd.coordinator_id == self.id {
+                    // coordinator itself
+                    self.handle_fast_reply(fast_reply);
+                } else {
+                    self.network.send_to_cluster(cmd.coordinator_id, msg);
+                }
+            }
+
             self.update_database_and_respond(decided_commands);
             if self.consistency_check {
                 self.snapshot_decided_log();
@@ -228,18 +268,50 @@ impl OmniPaxosServer {
         }
     }
 
+    fn is_current_leader(&self) -> bool {
+        if let Some((leader_id, accept_phase)) = self.omnipaxos.get_current_leader() {
+            leader_id == self.id && accept_phase
+        } else {
+            false
+        }
+    }
+
     fn update_database_and_respond(&mut self, commands: Vec<Command>) {
+
+        let is_leader = self.is_current_leader();
+
         // TODO: batching responses possible here (batch at handle_cluster_messages)
         for command in commands {
             let read = self.database.handle_command(command.kv_cmd);
-            if command.coordinator_id == self.id {
+
+            if is_leader {
                 let response = match read {
-                    Some(read_result) => ServerMessage::Read(command.id, read_result),
-                    None => ServerMessage::Write(command.id),
+                Some(read_result) => ServerMessage::Read(command.id, read_result),
+                None => ServerMessage::Write(command.id),
                 };
-                self.network.send_to_client(command.client_id, response);
+
+                if command.coordinator_id == self.id {
+                    // Leader is coordinator
+                    self.leader_responses.insert(
+                        command.id,
+                        (command.client_id, response),
+                    );
+                } 
+                else {
+                    // Send to coordinator
+                    self.network.send_to_cluster(
+                        command.coordinator_id,
+                        ClusterMessage::LeaderResponse(
+                            LeaderResponse {
+                                command_id: command.id,
+                                client_id: command.client_id,
+                                response,
+                            }
+                        ),
+                    );
+                }
             }
-        }
+         }
     }
 
     fn send_outgoing_msgs(&mut self) {
@@ -283,6 +355,15 @@ impl OmniPaxosServer {
                     debug!("Received start message from peer {from}");
                     received_start_signal = true;
                     self.send_client_start_signals(start_time);
+                }
+                ClusterMessage::FastReply(reply) => {
+                    self.handle_fast_reply(reply);
+                }
+                ClusterMessage::LeaderResponse(leader_response) => {
+                    self.leader_responses.insert(
+                        leader_response.command_id,
+                        (leader_response.client_id, leader_response.response),
+                    );
                 }
             }
         }
@@ -338,10 +419,10 @@ impl OmniPaxosServer {
 
                 self.last_log_deadline = cmd.deadline;
 
-                debug!(
-                    "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
-                    cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
-                );
+                // debug!(
+                //     "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
+                //     cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
+                // );
 
                 self.omnipaxos.append(cmd).expect("Append failed");
             } else {
@@ -372,5 +453,62 @@ impl OmniPaxosServer {
         output_file.write_all(config_json.as_bytes())?;
         output_file.flush()?;
         Ok(())
+    }
+
+    fn log_hash(&self) -> u64 {
+
+        let mut hasher = DefaultHasher::new();
+
+        for cmd in self.get_decided_log() {
+            cmd.hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+
+    fn handle_fast_reply(&mut self, reply: FastReply){
+        
+        let tracker = self.fast_replies
+            .entry(reply.command_id)
+            .or_insert(FastReplyTracker {
+                leader_hash: None,
+                follower_hashes: HashMap::new(),
+            });
+
+        if reply.is_leader {
+            tracker.leader_hash = Some(reply.log_hash);
+        } else {
+            *tracker.follower_hashes
+                .entry(reply.log_hash)
+                .or_insert(0) += 1;
+        }
+
+        let cluster_size = self.peers.len() + 1;
+        let f = (cluster_size - 1) / 2;
+        let required_followers = f + f / 2;
+
+        if let Some(leader_hash) = tracker.leader_hash {
+
+            let follower_count =
+                tracker.follower_hashes.get(&leader_hash).copied().unwrap_or(0);
+
+            if follower_count >= required_followers {
+
+                // info!(
+                //     "Command {} committed with hash {}",
+                //     reply.command_id,
+                //     leader_hash
+                // );d
+
+                if let Some((client_id, response)) =
+                    self.leader_responses.remove(&reply.command_id)
+                {
+                    self.network.send_to_client(client_id, response);
+                }
+
+                self.fast_replies.remove(&reply.command_id);
+            }
+        }
+
     }
 }
