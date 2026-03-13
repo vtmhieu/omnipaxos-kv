@@ -1,9 +1,10 @@
 pub mod messages {
     use omnipaxos::{messages::Message as OmniPaxosMessage, util::NodeId};
     use serde::{Deserialize, Serialize};
+        
 
     use super::{
-        kv::{Command, CommandId, KVCommand},
+        kv::{Command, CommandId, KVCommand, ClientId},
         utils::Timestamp,
     };
 
@@ -14,9 +15,28 @@ pub mod messages {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct FastReply {
+        pub command_id: CommandId,
+        pub client_id: ClientId,
+        pub coordinator_id: NodeId,
+        pub replica_id: NodeId,
+        pub is_leader: bool,
+        pub log_hash: u64,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct LeaderResponse {
+        pub command_id: CommandId,
+        pub client_id: ClientId,
+        pub response: ServerMessage,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub enum ClusterMessage {
         OmniPaxosMessage(OmniPaxosMessage<Command>),
         LeaderStartSignal(Timestamp),
+        FastReply(FastReply),
+        LeaderResponse(LeaderResponse),
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,7 +75,7 @@ pub mod kv {
     pub type NodeId = omnipaxos::util::NodeId;
     pub type InstanceId = NodeId;
 
-    #[derive(Debug, Clone, Entry, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Entry, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Command {
         pub client_id: ClientId,
         pub coordinator_id: NodeId,
@@ -76,7 +96,7 @@ pub mod kv {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum KVCommand {
         Put(String, String),
         Delete(String),
