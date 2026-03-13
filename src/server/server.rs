@@ -6,11 +6,13 @@ use omnipaxos::{
     util::{LogEntry, NodeId},
     OmniPaxos, OmniPaxosConfig,
 };
-use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp, clock_c::*};
+use omnipaxos_kv::clock::SimulatedClock;
+use omnipaxos_kv::common::{clock_c::*, kv::*, messages::*, utils::Timestamp};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use serde::Serialize;
-use std::{fs::File, io::Write, time::Duration};
-use omnipaxos_kv::clock::SimulatedClock;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::{collections::BTreeMap, fs::File, io::Write, time::Duration};
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -29,6 +31,9 @@ pub struct OmniPaxosServer {
     peers: Vec<NodeId>,
     consistency_check: bool,
     clock: SimulatedClock,
+
+    early_buffer: BinaryHeap<Reverse<Command>>,
+    last_log_deadline: Timestamp,
 }
 
 impl OmniPaxosServer {
@@ -57,7 +62,9 @@ impl OmniPaxosServer {
             peers: config.get_peers(config.local.server_id),
             config,
             consistency_check: false,
-            clock
+            clock,
+            early_buffer: BinaryHeap::new(),
+            last_log_deadline: 0,
         }
     }
 
@@ -65,8 +72,8 @@ impl OmniPaxosServer {
         // Save config to output file
         if self.consistency_check {
             let path = format!(
-            "{}-decided-log.json",
-            self.config.local.output_filepath.trim_end_matches(".json")
+                "{}-decided-log.json",
+                self.config.local.output_filepath.trim_end_matches(".json")
             );
             let _ = std::fs::remove_file(&path);
         }
@@ -83,6 +90,7 @@ impl OmniPaxosServer {
             tokio::select! {
                 _ = election_interval.tick() => {
                     self.omnipaxos.tick();
+                    self.release_from_early_buffer();
                     self.send_outgoing_msgs();
                 },
                 _ = self.network.cluster_messages.recv_many(&mut cluster_msg_buf, NETWORK_BATCH_SIZE) => {
@@ -153,7 +161,8 @@ impl OmniPaxosServer {
                         //     cmd.id,
                         //     cmd.deadline
                         // );
-                        Some(cmd)},
+                        Some(cmd)
+                    }
                     _ => unreachable!(),
                 })
                 .collect();
@@ -185,25 +194,30 @@ impl OmniPaxosServer {
             op: String,
         }
 
-        let commands: Vec<CommandEntry> = log.iter().enumerate().map(|(idx, cmd)| {
-            let op = match &cmd.kv_cmd {
-                KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
-                KVCommand::Get(key) => format!("Get({})", key),
-                KVCommand::Delete(key) => format!("Delete({})", key),
-            };
-            CommandEntry { idx, op }
-        }).collect();
+        let commands: Vec<CommandEntry> = log
+            .iter()
+            .enumerate()
+            .map(|(idx, cmd)| {
+                let op = match &cmd.kv_cmd {
+                    KVCommand::Put(key, value) => format!("Put({}, {})", key, value),
+                    KVCommand::Get(key) => format!("Get({})", key),
+                    KVCommand::Delete(key) => format!("Delete({})", key),
+                };
+                CommandEntry { idx, op }
+            })
+            .collect();
 
         let path = format!(
             "{}-decided-log.json",
             self.config.local.output_filepath.trim_end_matches(".json")
         );
 
-        let mut snapshots: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
-            serde_json::from_str(&contents).unwrap_or_default()
-        } else {
-            vec![]
-        };
+        let mut snapshots: Vec<serde_json::Value> =
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                serde_json::from_str(&contents).unwrap_or_default()
+            } else {
+                vec![]
+            };
 
         snapshots.push(serde_json::to_value(&commands).unwrap());
 
@@ -242,7 +256,6 @@ impl OmniPaxosServer {
         for (from, message) in messages.drain(..) {
             match message {
                 ClientMessage::Append(command_id, kv_command) => {
-
                     let current_ts = self.clock.get_time();
                     let uncertainty = self.clock.get_uncertainty() as i64;
                     let deadline = current_ts + uncertainty + LATENCY_BOUND_US;
@@ -277,7 +290,13 @@ impl OmniPaxosServer {
         received_start_signal
     }
 
-    fn append_to_log(&mut self, from: ClientId, command_id: CommandId, kv_command: KVCommand, deadline: Timestamp) {
+    fn append_to_log(
+        &mut self,
+        from: ClientId,
+        command_id: CommandId,
+        kv_command: KVCommand,
+        deadline: Timestamp,
+    ) {
         let command = Command {
             client_id: from,
             coordinator_id: self.id,
@@ -285,16 +304,50 @@ impl OmniPaxosServer {
             kv_cmd: kv_command,
             deadline,
         };
-        self.omnipaxos
-            .append(command)
-            .expect("Append to Omnipaxos log failed");
-        
+
+        // check deadline and last_log_deadline
+        if command.deadline < self.last_log_deadline {
+            // debug!(
+            //     "Command {} from client {} with deadline {} is too late (last log deadline {})",
+            //     command_id, from, command.deadline, self.last_log_deadline
+            // );
+            self.omnipaxos
+                .append(command)
+                .expect("Append to Omnipaxos log failed");
+        } else {
+            // debug!(
+            //     "Command {} from client {} with deadline {} is into early_buffer (last log deadline {})",
+            //     command_id, from, command.deadline, self.last_log_deadline
+            // );
+            self.early_buffer.push(Reverse(command));
+        }
+
         // info!(
         //     "Server {} appended command {} with deadline {}",
         //     self.id,
         //     command_id,
         //     deadline
         // );
+    }
+
+    fn release_from_early_buffer(&mut self) {
+        while let Some(Reverse(cmd)) = self.early_buffer.peek() {
+            let current_time = self.clock.get_time();
+            if cmd.deadline <= current_time {
+                let Reverse(cmd) = self.early_buffer.pop().unwrap();
+
+                self.last_log_deadline = cmd.deadline;
+
+                debug!(
+                    "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
+                    cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
+                );
+
+                self.omnipaxos.append(cmd).expect("Append failed");
+            } else {
+                break;
+            }
+        }
     }
 
     fn send_cluster_start_signals(&mut self, start_time: Timestamp) {
