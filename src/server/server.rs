@@ -213,6 +213,7 @@ impl OmniPaxosServer {
             }
 
             self.update_database_and_respond(decided_commands);
+
             if self.consistency_check {
                 self.snapshot_decided_log();
             }
@@ -399,12 +400,16 @@ impl OmniPaxosServer {
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
             self.late_buffer.push(Reverse(command.clone()));
+            debug!("Command {} from client {} with deadline {} is too late (last log deadline {})",
+                command.id, command.client_id, command.deadline, self.last_log_deadline);
         } else {
             // debug!(
             //     "Command {} from client {} with deadline {} is into early_buffer (last log deadline {})",
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
             self.early_buffer.push(Reverse(command.clone()));
+            debug!("Command {} from client {} with deadline {} is on time (last log deadline {})",
+                command.id, command.client_id, command.deadline, self.last_log_deadline);
         }
 
         // info!(
@@ -423,12 +428,13 @@ impl OmniPaxosServer {
 
                 self.last_log_deadline = cmd.deadline;
 
-                // debug!(
-                //     "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
-                //     cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
-                // );
-
-                self.omnipaxos.append(cmd).expect("Append failed");
+                debug!(
+                    "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
+                    cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
+                );
+                if (self.is_current_leader()){
+                    self.omnipaxos.append(cmd).expect("Append failed");
+                }
             } else {
                 break;
             }
