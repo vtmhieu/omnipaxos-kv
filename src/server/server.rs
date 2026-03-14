@@ -37,6 +37,7 @@ pub struct OmniPaxosServer {
     consistency_check: bool,
     clock: SimulatedClock,
     early_buffer: BinaryHeap<Reverse<Command>>,
+    late_buffer: BinaryHeap<Reverse<Command>>,
     last_log_deadline: Timestamp,
     fast_replies: HashMap<CommandId, FastReplyTracker>,
     leader_responses: HashMap<CommandId, (ClientId, ServerMessage)>,
@@ -75,6 +76,7 @@ impl OmniPaxosServer {
             consistency_check: false,
             clock,
             early_buffer: BinaryHeap::new(),
+            late_buffer: BinaryHeap::new(),
             last_log_deadline: 0,
             fast_replies: HashMap::new(),
             leader_responses: HashMap::new(),
@@ -211,6 +213,7 @@ impl OmniPaxosServer {
             }
 
             self.update_database_and_respond(decided_commands);
+
             if self.consistency_check {
                 self.snapshot_decided_log();
             }
@@ -330,7 +333,16 @@ impl OmniPaxosServer {
                     let uncertainty = self.clock.get_uncertainty() as i64;
                     let deadline = current_ts + uncertainty + LATENCY_BOUND_US;
 
-                    self.append_to_log(from, command_id, kv_command, deadline)
+                    let broadcast_msg = Command {
+                        client_id: from,
+                        coordinator_id: self.id,
+                        id: command_id,
+                        kv_cmd: kv_command.clone(),
+                        deadline: deadline,
+                    };
+
+                    self.broadcast_command(broadcast_msg.clone());
+                    self.append_to_log(broadcast_msg)
                 }
             }
         }
@@ -345,9 +357,12 @@ impl OmniPaxosServer {
         for (from, message) in messages.drain(..) {
             trace!("{}: Received {message:?}", self.id);
             match message {
-                ClusterMessage::OmniPaxosMessage(m) => {
+                ClusterMessage::OmniPaxosMessage(m) => { 
                     self.omnipaxos.handle_incoming(m);
                     self.handle_decided_entries();
+                }
+                ClusterMessage::Command(m) => { 
+                    self.append_to_log(m);
                 }
                 ClusterMessage::LeaderStartSignal(start_time) => {
                     debug!("Received start message from peer {from}");
@@ -369,20 +384,14 @@ impl OmniPaxosServer {
         received_start_signal
     }
 
-    fn append_to_log(
-        &mut self,
-        from: ClientId,
-        command_id: CommandId,
-        kv_command: KVCommand,
-        deadline: Timestamp,
-    ) {
-        let command = Command {
-            client_id: from,
-            coordinator_id: self.id,
-            id: command_id,
-            kv_cmd: kv_command,
-            deadline,
-        };
+    fn broadcast_command(&mut self, command: Command) {
+        for peer in &self.peers {
+            self.network
+                .send_to_cluster(*peer, ClusterMessage::Command(command.clone()));
+        }
+    }
+
+    fn append_to_log(&mut self, command: Command) {
 
         // check deadline and last_log_deadline
         if command.deadline < self.last_log_deadline {
@@ -390,15 +399,17 @@ impl OmniPaxosServer {
             //     "Command {} from client {} with deadline {} is too late (last log deadline {})",
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
-            self.omnipaxos
-                .append(command)
-                .expect("Append to Omnipaxos log failed");
+            self.late_buffer.push(Reverse(command.clone()));
+            debug!("Command {} from client {} with deadline {} is too late (last log deadline {})",
+                command.id, command.client_id, command.deadline, self.last_log_deadline);
         } else {
             // debug!(
             //     "Command {} from client {} with deadline {} is into early_buffer (last log deadline {})",
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
-            self.early_buffer.push(Reverse(command));
+            self.early_buffer.push(Reverse(command.clone()));
+            debug!("Command {} from client {} with deadline {} is on time (last log deadline {})",
+                command.id, command.client_id, command.deadline, self.last_log_deadline);
         }
 
         // info!(
@@ -417,12 +428,13 @@ impl OmniPaxosServer {
 
                 self.last_log_deadline = cmd.deadline;
 
-                // debug!(
-                //     "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
-                //     cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
-                // );
-
-                self.omnipaxos.append(cmd).expect("Append failed");
+                debug!(
+                    "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
+                    cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
+                );
+                if (self.is_current_leader()){
+                    self.omnipaxos.append(cmd).expect("Append failed");
+                }
             } else {
                 break;
             }

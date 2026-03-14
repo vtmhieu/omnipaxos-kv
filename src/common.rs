@@ -36,6 +36,7 @@ pub mod messages {
         OmniPaxosMessage(OmniPaxosMessage<Command>),
         LeaderStartSignal(Timestamp),
         FastReply(FastReply),
+        Command(Command),
         LeaderResponse(LeaderResponse),
     }
 
