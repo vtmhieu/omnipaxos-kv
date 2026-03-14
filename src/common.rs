@@ -15,16 +15,6 @@ pub mod messages {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub struct FastReply {
-        pub command_id: CommandId,
-        pub client_id: ClientId,
-        pub coordinator_id: NodeId,
-        pub replica_id: NodeId,
-        pub is_leader: bool,
-        pub log_hash: u64,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct LeaderResponse {
         pub command_id: CommandId,
         pub client_id: ClientId,
@@ -32,12 +22,40 @@ pub mod messages {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct SyncIndex {
+        pub client_id: ClientId,
+        pub command_id: CommandId,
+        pub deadline: Timestamp,
+        pub log_index: usize,
+    }
+
+     #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    pub struct SlowPathReply {
+        pub command_id: CommandId,
+        pub client_id: ClientId,
+        pub replica_id: NodeId,
+    }
+
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    pub struct FastPathReply {
+        pub command_id: CommandId,
+        pub client_id: ClientId,
+        pub coordinator_id: NodeId,
+        pub replica_id: NodeId,
+        pub is_leader: bool,
+        pub log_hash: u64,
+        pub is_slow_path: bool,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub enum ClusterMessage {
         OmniPaxosMessage(OmniPaxosMessage<Command>),
         LeaderStartSignal(Timestamp),
-        FastReply(FastReply),
         Command(Command),
         LeaderResponse(LeaderResponse),
+        SyncIndex(SyncIndex),
+        FastPathReply(FastPathReply),
+        SlowPathReply(SlowPathReply),
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +101,13 @@ pub mod kv {
         pub id: CommandId,
         pub kv_cmd: KVCommand,
         pub deadline: Timestamp,
+        pub path: CommitPath,
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+    pub enum CommitPath {
+        Fast,
+        Slow,
     }
 
     impl Ord for Command {
@@ -94,6 +119,12 @@ pub mod kv {
     impl PartialOrd for Command {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
             Some(self.cmp(other))
+        }
+    }
+
+    impl Command {
+        pub fn request_key(&self) -> (ClientId, CommandId) {
+            (self.client_id, self.id)
         }
     }
 

@@ -24,6 +24,8 @@ const LEADER_WAIT: Duration = Duration::from_secs(1);
 const ELECTION_TIMEOUT: Duration = Duration::from_secs(1);
 const LATENCY_BOUND_US: i64 = 200;
 const FASTPATH_INTERVAL: Duration = Duration::from_millis(1);
+const SLOWPATH_INTERVAL: Duration = Duration::from_millis(1);
+const DEADLINE_INCREMENT_US: i64 = 2;
 
 pub struct OmniPaxosServer {
     id: NodeId,
@@ -37,10 +39,16 @@ pub struct OmniPaxosServer {
     consistency_check: bool,
     clock: SimulatedClock,
     early_buffer: BinaryHeap<Reverse<Command>>,
-    late_buffer: BinaryHeap<Reverse<Command>>,
+    late_buffer: HashMap<(ClientId, CommandId), Command>,
     last_log_deadline: Timestamp,
     fast_replies: HashMap<CommandId, FastReplyTracker>,
     leader_responses: HashMap<CommandId, (ClientId, ServerMessage)>,
+
+    pending_sync: HashMap<usize, SyncIndex>,
+    sync_point: usize,
+    slow_reply_trackers: HashMap<CommandId, usize>,
+    request_start: HashMap<(ClientId, CommandId), Timestamp>,
+    path_by_command: HashMap<CommandId, CommitPath>,
 }
 
 struct FastReplyTracker {
@@ -73,13 +81,19 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
-            consistency_check: false,
+            consistency_check: true,
             clock,
             early_buffer: BinaryHeap::new(),
-            late_buffer: BinaryHeap::new(),
+            late_buffer: HashMap::new(),
             last_log_deadline: 0,
             fast_replies: HashMap::new(),
             leader_responses: HashMap::new(),
+
+            pending_sync: HashMap::new(),
+            sync_point: 0,
+            slow_reply_trackers: HashMap::new(),
+            request_start: HashMap::new(),
+            path_by_command: HashMap::new(),
         }
     }
 
@@ -103,6 +117,8 @@ impl OmniPaxosServer {
 
         let mut fast_path_interval = tokio::time::interval(FASTPATH_INTERVAL);
 
+        let mut slow_path_interval = tokio::time::interval(SLOWPATH_INTERVAL);
+
         loop {
             tokio::select! {
                 _ = fast_path_interval.tick() => {
@@ -117,6 +133,9 @@ impl OmniPaxosServer {
                 },
                 _ = self.network.client_messages.recv_many(&mut client_msg_buf, NETWORK_BATCH_SIZE) => {
                     self.handle_client_messages(&mut client_msg_buf).await;
+                },
+                _ = slow_path_interval.tick() => {
+                    self.increase_deadline();
                 },
             }
         }
@@ -162,24 +181,23 @@ impl OmniPaxosServer {
 
     fn handle_decided_entries(&mut self) {
         // TODO: Can use a read_raw here to avoid allocation
+        let old_decided_idx = self.current_decided_idx;
         let new_decided_idx = self.omnipaxos.get_decided_idx();
-        if self.current_decided_idx < new_decided_idx {
+
+        if old_decided_idx < new_decided_idx {
+            
             let decided_entries = self
                 .omnipaxos
                 .read_decided_suffix(self.current_decided_idx)
                 .unwrap();
+
             self.current_decided_idx = new_decided_idx;
             debug!("Decided {new_decided_idx}");
-            let decided_commands = decided_entries
+
+            let decided_commands: Vec<Command> = decided_entries
                 .into_iter()
                 .filter_map(|e| match e {
                     LogEntry::Decided(cmd) => {
-                        // info!(
-                        //     "Server {} decided cmd {} deadline {}",
-                        //     self.id,
-                        //     cmd.id,
-                        //     cmd.deadline
-                        // );
                         Some(cmd)
                     }
                     _ => unreachable!(),
@@ -190,25 +208,42 @@ impl OmniPaxosServer {
             let log_hash = self.log_hash();
             let is_leader = self.is_current_leader();
 
-            for cmd in &decided_commands {
+            for (offset, cmd) in decided_commands.iter().enumerate() {
+                let log_index = old_decided_idx + offset + 1;
+
                 let cmd: &Command = cmd;
 
-                let fast_reply = FastReply {
+                let fast_reply = FastPathReply {
                     command_id: cmd.id,
                     client_id: cmd.client_id,
                     coordinator_id: cmd.coordinator_id,
                     replica_id: self.id,
                     is_leader,
                     log_hash,
+                    is_slow_path: matches!(cmd.path, CommitPath::Slow),
                 };
 
-                let msg = ClusterMessage::FastReply(fast_reply.clone());
+                let msg = ClusterMessage::FastPathReply(fast_reply.clone());
 
                 if cmd.coordinator_id == self.id {
                     // coordinator itself
                     self.handle_fast_reply(fast_reply);
                 } else {
                     self.network.send_to_cluster(cmd.coordinator_id, msg);
+                }
+
+                if is_leader {
+                    let sync = SyncIndex {
+                        client_id: cmd.client_id,
+                        command_id: cmd.id,
+                        deadline: cmd.deadline,
+                        log_index,
+                    };
+
+                    for peer in &self.peers {
+                        self.network
+                            .send_to_cluster(*peer, ClusterMessage::SyncIndex(sync.clone()));
+                    }
                 }
             }
 
@@ -288,6 +323,7 @@ impl OmniPaxosServer {
 
         // TODO: batching responses possible here (batch at handle_cluster_messages)
         for command in commands {
+
             let read = self.database.handle_command(command.kv_cmd);
 
             if is_leader {
@@ -339,7 +375,11 @@ impl OmniPaxosServer {
                         id: command_id,
                         kv_cmd: kv_command.clone(),
                         deadline: deadline,
+                        path: CommitPath::Fast,
                     };
+
+                    self.request_start.insert((from, command_id), current_ts);
+                    self.path_by_command.insert(command_id, CommitPath::Fast);
 
                     self.broadcast_command(broadcast_msg.clone());
                     self.append_to_log(broadcast_msg)
@@ -369,7 +409,7 @@ impl OmniPaxosServer {
                     received_start_signal = true;
                     self.send_client_start_signals(start_time);
                 }
-                ClusterMessage::FastReply(reply) => {
+                ClusterMessage::FastPathReply(reply) => {
                     self.handle_fast_reply(reply);
                 }
                 ClusterMessage::LeaderResponse(leader_response) => {
@@ -377,6 +417,20 @@ impl OmniPaxosServer {
                         leader_response.command_id,
                         (leader_response.client_id, leader_response.response),
                     );
+                }
+                ClusterMessage::SlowPathReply(reply) => {
+                    self.handle_slow_reply(reply);
+                }
+                ClusterMessage::SyncIndex(index_msg) => {
+                    debug!(
+                        "Follower {} received log index {} for command {}",
+                        self.id,
+                        index_msg.log_index,
+                        index_msg.command_id
+                    );
+
+                    self.pending_sync.insert(index_msg.log_index, index_msg);
+                    self.log_synchronization();
                 }
             }
         }
@@ -399,7 +453,7 @@ impl OmniPaxosServer {
             //     "Command {} from client {} with deadline {} is too late (last log deadline {})",
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
-            self.late_buffer.push(Reverse(command.clone()));
+            self.late_buffer.insert(command.request_key(), command.clone());
             debug!("Command {} from client {} with deadline {} is too late (last log deadline {})",
                 command.id, command.client_id, command.deadline, self.last_log_deadline);
         } else {
@@ -432,8 +486,9 @@ impl OmniPaxosServer {
                     "Releasing command {} from client {} with deadline {} from early_buffer (last log deadline {})",
                     cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
                 );
+
                 if (self.is_current_leader()){
-                    self.omnipaxos.append(cmd).expect("Append failed");
+                    self.omnipaxos.append(cmd.clone()).expect("Append failed");
                 }
             } else {
                 break;
@@ -475,7 +530,90 @@ impl OmniPaxosServer {
         hasher.finish()
     }
 
-    fn handle_fast_reply(&mut self, reply: FastReply) {
+    fn increase_deadline(&mut self) {
+        if !self.is_current_leader() {
+            return;
+        }
+
+        let Some((&key, _)) = self
+            .late_buffer
+            .iter()
+            .min_by_key(|(_, cmd)| cmd.deadline)
+        else {
+            return;
+        };
+
+        let mut cmd = self.late_buffer.remove(&key).unwrap();
+        cmd.deadline = self.last_log_deadline + DEADLINE_INCREMENT_US;
+        cmd.path = CommitPath::Slow;
+
+        self.path_by_command.insert(cmd.id, CommitPath::Slow);
+
+        // debug!(
+        //     "Leader {} rescuing late command {} from client {}. New deadline {} (last_log_deadline {})",
+        //     self.id, cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
+        // );
+
+        self.early_buffer.push(Reverse(cmd));
+    }
+
+    fn log_synchronization(&mut self) {
+        loop {
+            let next = self.sync_point + 1;
+            let Some(sync) = self.pending_sync.get(&next).cloned() else {
+                break;
+            };
+
+            let decided_log = self.get_decided_log();
+            if decided_log.len() < next {
+                break;
+            }
+
+            let local = &decided_log[next - 1];
+
+            if local.client_id == sync.client_id
+                && local.id == sync.command_id
+                && local.deadline == sync.deadline
+            {
+                self.sync_point = next;
+                self.pending_sync.remove(&next);
+
+                if !self.is_current_leader() && matches!(local.path, CommitPath::Slow) {
+                    let reply = SlowPathReply {
+                        command_id: local.id,
+                        client_id: local.client_id,
+                        replica_id: self.id,
+                    };
+
+                    if local.coordinator_id == self.id {
+                        self.handle_slow_reply(reply);
+                    } else {
+                        self.network
+                            .send_to_cluster(local.coordinator_id, ClusterMessage::SlowPathReply(reply));
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn handle_fast_reply(&mut self, reply: FastPathReply) {
+
+        if reply.is_slow_path {
+            if reply.is_leader {
+                let tracker = self
+                    .fast_replies
+                    .entry(reply.command_id)
+                    .or_insert(FastReplyTracker {
+                        leader_hash: None,
+                        follower_hashes: HashMap::new(),
+                    });
+                tracker.leader_hash = Some(reply.log_hash);
+            }
+            return;
+        }
+
         let tracker = self
             .fast_replies
             .entry(reply.command_id)
@@ -514,7 +652,23 @@ impl OmniPaxosServer {
                 }
 
                 self.fast_replies.remove(&reply.command_id);
+                self.path_by_command.remove(&reply.command_id);
             }
+        }
+    }
+
+    fn handle_slow_reply(&mut self, reply: SlowPathReply) {
+        let count = self.slow_reply_trackers.entry(reply.command_id).or_insert(0);
+        *count += 1;
+
+        let cluster_size = self.peers.len() + 1;
+        let f = (cluster_size - 1) / 2;
+
+        if *count >= f {
+            if let Some((client_id, response)) = self.leader_responses.remove(&reply.command_id) {
+                self.network.send_to_client(client_id, response);
+            }
+            self.slow_reply_trackers.remove(&reply.command_id);
         }
     }
 }
