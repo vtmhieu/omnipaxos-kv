@@ -3,6 +3,8 @@ pub mod messages {
     use serde::{Deserialize, Serialize};
         
 
+    use crate::common::kv::CommitPath;
+
     use super::{
         kv::{Command, CommandId, KVCommand, ClientId},
         utils::Timestamp,
@@ -65,16 +67,24 @@ pub mod messages {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub enum ServerMessage {
-        Write(CommandId),
-        Read(CommandId, Option<String>),
+        Write(CommandId, String),
+        Read(CommandId, Option<String>, String),
         StartSignal(Timestamp),
     }
 
     impl ServerMessage {
         pub fn command_id(&self) -> CommandId {
             match self {
-                ServerMessage::Write(id) => *id,
-                ServerMessage::Read(id, _) => *id,
+                ServerMessage::Write(id, commit_path) => *id,
+                ServerMessage::Read(id, _, commit_path) => *id,
+                ServerMessage::StartSignal(_) => unimplemented!(),
+            }
+        }
+
+        pub fn commit_path(&self) -> String {
+            match self {
+                ServerMessage::Write(_, path) => path.to_string(),
+                ServerMessage::Read(_, _, path) => path.to_string(),
                 ServerMessage::StartSignal(_) => unimplemented!(),
             }
         }

@@ -18,7 +18,7 @@ pub struct Client {
     next_request_id: usize,
     latency_sum: u128,
     start_time: Instant,
-    metric_report: bool
+    metric_report: bool,
 }
 
 impl Client {
@@ -38,7 +38,7 @@ impl Client {
             next_request_id: 0,
             latency_sum: 0,
             start_time: Instant::now(),
-            metric_report: false
+            metric_report: false,
         }
     }
 
@@ -124,7 +124,8 @@ impl Client {
             ServerMessage::StartSignal(_) => (),
             server_response => {
                 let cmd_id = server_response.command_id();
-                self.client_data.new_response(cmd_id);
+                let path: String = server_response.commit_path();
+                self.client_data.new_response(cmd_id, path);
                 self.latency_sum += self.client_data.response_latency(cmd_id) as u128;
             }
         }
@@ -197,7 +198,9 @@ impl Client {
             "response_count": self.client_data.response_count(),
             "runtime_ms": total_runtime,
             "throughput_ops_per_sec": throughput,
-            "avg_latency_ms": if self.client_data.response_count() > 0 { self.latency_sum / self.client_data.response_count() as u128 } else { 0 }
+            "avg_latency_ms": if self.client_data.response_count() > 0 { self.latency_sum / self.client_data.response_count() as u128 } else { 0 },
+            "fastpath_count": self.client_data.fastpath_count(),
+            "fastpath_ratio": self.client_data.fastpath_count() as f64 / self.client_data.response_count() as f64,
         });
 
         metrics_file.push(serde_json::to_value(&metrics).unwrap());
