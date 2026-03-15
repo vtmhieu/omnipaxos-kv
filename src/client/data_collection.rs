@@ -12,6 +12,7 @@ struct RequestData {
     request_time: Timestamp,
     write: bool,
     response_time: Option<Timestamp>,
+    fastpath: bool,
 }
 
 pub struct ClientData {
@@ -32,18 +33,24 @@ impl ClientData {
             request_time: Utc::now().timestamp_millis(),
             write: is_write,
             response_time: None,
+            fastpath: false,
         };
         self.request_data.push(data);
     }
 
-    pub fn new_response(&mut self, command_id: CommandId) {
+    pub fn new_response(&mut self, command_id: CommandId, path: String) {
         let response_time = Utc::now().timestamp_millis();
         self.request_data[command_id].response_time = Some(response_time);
+        self.request_data[command_id].fastpath = path == "fast";
         self.response_count += 1;
     }
 
     pub fn response_latency(&mut self, command_id: CommandId) -> i64 {
         self.request_data[command_id].response_time.unwrap() - self.request_data[command_id].request_time
+    }
+
+    pub fn fastpath_count(&self) -> usize {
+        self.request_data.iter().filter(|data| data.fastpath).count()
     }
 
     pub fn response_count(&self) -> usize {

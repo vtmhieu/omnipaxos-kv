@@ -81,7 +81,7 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
-            consistency_check: true,
+            consistency_check: false,
             clock,
             early_buffer: BinaryHeap::new(),
             late_buffer: HashMap::new(),
@@ -328,8 +328,8 @@ impl OmniPaxosServer {
 
             if is_leader {
                 let response = match read {
-                    Some(read_result) => ServerMessage::Read(command.id, read_result),
-                    None => ServerMessage::Write(command.id),
+                    Some(read_result) => ServerMessage::Read(command.id, read_result, "".to_string()),
+                    None => ServerMessage::Write(command.id, "".to_string()),
                 };
 
                 if command.coordinator_id == self.id {
@@ -648,7 +648,17 @@ impl OmniPaxosServer {
 
                 if let Some((client_id, response)) = self.leader_responses.remove(&reply.command_id)
                 {
-                    self.network.send_to_client(client_id, response);
+                    match response {
+                        ServerMessage::Read(command_id, read_result, path) => {
+                            let fast_send = ServerMessage::Read(command_id, read_result, "fast".to_string());
+                            self.network.send_to_client(client_id, fast_send);
+                        }
+                        ServerMessage::Write(command_id, path) => {
+                            let fast_send = ServerMessage::Write(command_id, "fast".to_string());
+                            self.network.send_to_client(client_id, fast_send);
+                        }
+                        ServerMessage::StartSignal(_) => unimplemented!(),
+                    }
                 }
 
                 self.fast_replies.remove(&reply.command_id);
