@@ -28,11 +28,46 @@ def example_benchmark(num_runs: int = 3):
     cluster = (
         OmnipaxosClusterBuilder(1)
         .initial_leader(5)
-        .server(1, "us-west2-a", machine_type="e2-standard-2")
-        .server(2, "us-south1-a", machine_type="e2-standard-2")
-        .server(3, "us-east4-b", machine_type="e2-standard-2")
-        .server(4, "europe-southwest1-a", machine_type="e2-standard-2")
-        .server(5, "europe-west4-a", machine_type="e2-standard-2")
+        .server(
+            1,
+            "us-west2-a",
+            machine_type="e2-standard-2",
+            uncertainty_us=1000,
+            sync_interval_ms=100,
+            drift_per_sec=1.0,
+        )
+        .server(
+            2,
+            "us-south1-a",
+            machine_type="e2-standard-2",
+            uncertainty_us=1000,
+            sync_interval_ms=100,
+            drift_per_sec=1.0,
+        )
+        .server(
+            3,
+            "us-east4-b",
+            machine_type="e2-standard-2",
+            uncertainty_us=1000,
+            sync_interval_ms=100,
+            drift_per_sec=1.0,
+        )
+        .server(
+            4,
+            "europe-southwest1-a",
+            machine_type="e2-standard-2",
+            uncertainty_us=1000,
+            sync_interval_ms=100,
+            drift_per_sec=1.0,
+        )
+        .server(
+            5,
+            "europe-west4-a",
+            machine_type="e2-standard-2",
+            uncertainty_us=1000,
+            sync_interval_ms=100,
+            drift_per_sec=1.0,
+        )
         .client(1, "us-west2-a", requests=workload[1])
         .client(2, "us-south1-a", requests=workload[2])
         .client(3, "us-east4-b", requests=workload[3])

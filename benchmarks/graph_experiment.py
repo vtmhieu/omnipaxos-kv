@@ -77,7 +77,7 @@ def parse_client_log(output_file: Path, summary_file: Path) -> pd.DataFrame:
 
 
 def get_experiment_data(
-    experiment_name: str
+    experiment_name: str,
 ) -> tuple[dict[int, pd.DataFrame], dict[int, pd.DataFrame]]:
     servers_data = {}
     clients_data = {}
@@ -98,7 +98,7 @@ def location_name(location: str) -> str:
     name_mapping = {
         "us-west2-a": "Los Angeles",
         "us-south1-a": "Dallas",
-        "us-east4-a": "N. Virginia",
+        "us-east4-b": "N. Virginia",
         "us-east5-a": "Columbus",
         "europe-west2-a": "London",
         "europe-west4-a": "Netherlands",
@@ -116,7 +116,7 @@ def location_color(location: str):
     color_mapping = {
         "us-west2-a": "#FDBB3B",
         "us-south1-a": "#4CA98F",
-        "us-east4-a": "#9A6DB8",
+        "us-east4-b": "#9A6DB8",
         "europe-west2-a": "#4CA98F",
         "europe-west4-a": "#FF6478",
         "europe-west10-a": "#9A6DB8",
@@ -181,6 +181,7 @@ def create_base_figure(clients_data: dict[int, pd.DataFrame]):
     # plt.tight_layout()
     return fig, axs
 
+
 def graph_relative_request_rate_subplot(fig, clients_data):
     fig.set_ylim(bottom=0, top=1)
     fig.set_yticks([0.0, 0.5, 1.0])
@@ -228,7 +229,9 @@ def graph_request_rate_subplot(fig, clients_data):
         )
 
 
-def graph_client_data_individual(experiment_name: str, specific_server: int | None = None):
+def graph_client_data_individual(
+    experiment_name: str, specific_server: int | None = None
+):
     clients_data, servers_data = get_experiment_data(experiment_name)
     for id, server_data in servers_data.items():
         if specific_server is not None and specific_server != id:
@@ -267,7 +270,7 @@ def graph_client_data_individual(experiment_name: str, specific_server: int | No
 
 def graph_average_latency_comparison_all(
     experiment_dir: str,
-    other_experiments: list[tuple[str, str]], # (name, dir)
+    other_experiments: list[tuple[str, str]],  # (name, dir)
     experiment_labels: dict[str, str],
     legend_args: dict,
 ):
@@ -295,7 +298,7 @@ def graph_average_latency_comparison_all(
     )
 
     # Plot other experiment data
-    for (experiment_name, experiment_dir) in other_experiments:
+    for experiment_name, experiment_dir in other_experiments:
         experiment_clients_data, _ = get_experiment_data(experiment_dir)
         all_requests_other = pd.concat(experiment_clients_data.values())
         start = min(all_requests_other.index)
@@ -338,7 +341,6 @@ def graph_example_bench():
     plt.close()
 
     graph_client_data_individual(flexible_dir)
-
 
 
 def main():

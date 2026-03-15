@@ -1,0 +1,20 @@
+{
+  "location": "us-south1-a",
+  "server_id": 2,
+  "server_address": "user-113233109591522822126-cluster-1-server-2.internal.zone.:8000",
+  "requests": [
+    {
+      "duration_sec": 10,
+      "requests_per_sec": 100,
+      "read_ratio": 0.5
+    },
+    {
+      "duration_sec": 10,
+      "requests_per_sec": 10,
+      "read_ratio": 0.5
+    }
+  ],
+  "sync_time": 1938,
+  "summary_filepath": "client-2.json",
+  "output_filepath": "client-2.csv"
+}

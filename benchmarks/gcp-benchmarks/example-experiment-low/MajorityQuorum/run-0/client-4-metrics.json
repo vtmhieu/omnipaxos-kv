@@ -1,0 +1,11 @@
+[
+  {
+    "avg_latency_ms": 645,
+    "fastpath_count": 950,
+    "fastpath_ratio": 1.0,
+    "response_count": 950,
+    "runtime_ms": 23944,
+    "throughput_ops_per_sec": 39.675910457734716,
+    "total_latency_ms": 613022
+  }
+]

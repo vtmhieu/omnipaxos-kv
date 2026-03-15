@@ -96,6 +96,7 @@ class ServerConfig:
         listen_port: int
         num_clients: int
         output_filepath: str
+        clock: ClockConfig
 
     def __post_init__(self):
         self.validate()
@@ -127,6 +128,13 @@ class ServerConfig:
     def generate_server_toml(self) -> str:
         server_toml_str = toml.dumps(asdict(self.omnipaxos_server_config))
         return server_toml_str
+
+
+@dataclass(frozen=True)
+class ClockConfig:
+    drift_per_sec: float
+    uncertainty_us: int
+    sync_interval_ms: int
 
 
 @dataclass(frozen=True)

@@ -212,6 +212,9 @@ class OmnipaxosClusterBuilder:
         zone: str,
         machine_type: str = "e2-standard-8",
         rust_log: str = "info",
+        drift_per_sec: float = 1.0,
+        uncertainty_us: int = 10,
+        sync_interval_ms: int = 500,
     ):
         if server_id in self._server_configs.keys():
             raise ValueError(f"Server {server_id} already exists")
@@ -240,6 +243,11 @@ class OmnipaxosClusterBuilder:
                 listen_port=self._server_port,
                 num_clients=0,
                 output_filepath=f"server-{server_id}.json",
+                clock=ClockConfig(
+                    drift_per_sec=drift_per_sec,
+                    uncertainty_us=uncertainty_us,
+                    sync_interval_ms=sync_interval_ms,
+                ),
             ),
             rust_log=rust_log,
         )
