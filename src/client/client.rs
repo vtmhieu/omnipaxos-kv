@@ -59,6 +59,7 @@ impl Client {
         match self.network.server_messages.recv().await {
             Some(ServerMessage::StartSignal(start_time)) => {
                 Self::wait_until_sync_time(&mut self.config, start_time).await;
+                self.start_time = Instant::now(); // ← after the sync wait
             }
             _ => panic!("Error waiting for start signal"),
         }
@@ -66,7 +67,8 @@ impl Client {
         // Early end
         let intervals = self.config.requests.clone();
         if intervals.is_empty() {
-            self.save_results().expect("Failed to save results");
+            self.save_results(Instant::now())
+                .expect("Failed to save results");
             return;
         }
 
@@ -119,7 +121,8 @@ impl Client {
             self.client_data.response_count(),
         );
         self.network.shutdown();
-        self.save_results().expect("Failed to save results");
+        let end_time = Instant::now();
+        self.save_results(end_time).expect("Failed to save results");
     }
 
     fn handle_server_message(&mut self, msg: ServerMessage) {
@@ -173,17 +176,17 @@ impl Client {
         }
     }
 
-    fn save_results(&self) -> Result<(), std::io::Error> {
+    fn save_results(&self, end_time: Instant) -> Result<(), std::io::Error> {
         self.client_data.save_summary(self.config.clone())?;
         self.client_data
             .to_csv(self.config.output_filepath.clone())?;
         if self.metric_report {
-            self.save_metrics()?;
+            self.save_metrics(end_time)?;
         }
         Ok(())
     }
 
-    pub fn save_metrics(&self) -> Result<(), std::io::Error> {
+    pub fn save_metrics(&self, end_time: Instant) -> Result<(), std::io::Error> {
         let path = format!(
             "{}-metrics.json",
             self.config.output_filepath.trim_end_matches(".csv")
@@ -194,7 +197,6 @@ impl Client {
             } else {
                 vec![]
             };
-        let end_time = Instant::now();
         let total_runtime = end_time.duration_since(self.start_time).as_millis();
         let throughput =
             (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);

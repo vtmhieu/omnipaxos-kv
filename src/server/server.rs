@@ -28,7 +28,6 @@ const FASTPATH_INTERVAL: Duration = Duration::from_millis(1);
 const SLOWPATH_INTERVAL: Duration = Duration::from_millis(1);
 const DEADLINE_INCREMENT_US: i64 = 2;
 const WINDOW_SIZE: usize = 1000;
-const DEADLINE_MARGIN_US: i64 = 10;
 
 pub struct OmniPaxosServer {
     id: NodeId,
@@ -54,6 +53,7 @@ pub struct OmniPaxosServer {
     path_by_command: HashMap<CommandId, CommitPath>,
 
     owd_window: VecDeque<i64>,
+    adaptive_deadline: bool,
 }
 
 struct FastReplyTracker {
@@ -101,6 +101,7 @@ impl OmniPaxosServer {
             path_by_command: HashMap::new(),
 
             owd_window: VecDeque::with_capacity(WINDOW_SIZE),
+            adaptive_deadline: true,
         }
     }
 
@@ -373,9 +374,13 @@ impl OmniPaxosServer {
                     let current_ts = self.clock.get_time();
                     let uncertainty = self.clock.get_uncertainty() as i64;
 
-                    // Use adaptive P95 OWD instead of the static constant
-                    let adaptive_owd = self.get_p95_owd();
-                    let deadline = current_ts + uncertainty + adaptive_owd + DEADLINE_MARGIN_US;
+                    let mut deadline = current_ts + uncertainty + LATENCY_BOUND_US;
+
+                    if self.adaptive_deadline {
+                        // Use adaptive P95 OWD instead of the static constant
+                        let adaptive_owd = self.get_p95_owd();
+                        deadline = current_ts + uncertainty + adaptive_owd;
+                    }
 
                     let broadcast_msg = Command {
                         client_id: from,
