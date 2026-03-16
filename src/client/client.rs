@@ -67,8 +67,7 @@ impl Client {
         // Early end
         let intervals = self.config.requests.clone();
         if intervals.is_empty() {
-            self.save_results(Instant::now())
-                .expect("Failed to save results");
+            self.save_results(Instant::now()).expect("Failed to save results");
             return;
         }
 
@@ -191,12 +190,11 @@ impl Client {
             "{}-metrics.json",
             self.config.output_filepath.trim_end_matches(".csv")
         );
-        let mut metrics_file: Vec<serde_json::Value> =
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                serde_json::from_str(&contents).unwrap_or_default()
-            } else {
-                vec![]
-            };
+        let mut metrics_file: Vec<serde_json::Value> = if let Ok(contents) = std::fs::read_to_string(&path) {
+            serde_json::from_str(&contents).unwrap_or_default()
+        } else {
+            vec![]
+        };
         let total_runtime = end_time.duration_since(self.start_time).as_millis();
         let throughput =
             (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);
