@@ -18,9 +18,9 @@ COMPOSE_PID=$!
 log "Compose running in background (PID $COMPOSE_PID). Waiting ${RESTART_DELAY}s before restarting s4..."
 sleep "$RESTART_DELAY"
 
-log "Restarting s4..."
-sudo docker compose restart s4
-log "s4 restarted."
+log "Restarting s3..."
+sudo docker compose restart s3
+log "s3 restarted."
 
 log "Bringing compose back to foreground (Ctrl+C to stop)..."
 wait "$COMPOSE_PID"
