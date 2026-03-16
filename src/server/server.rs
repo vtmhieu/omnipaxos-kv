@@ -16,6 +16,7 @@ use std::{fs::File, io::Write, time::Duration};
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
@@ -26,6 +27,7 @@ const LATENCY_BOUND_US: i64 = 200;
 const FASTPATH_INTERVAL: Duration = Duration::from_millis(1);
 const SLOWPATH_INTERVAL: Duration = Duration::from_millis(1);
 const DEADLINE_INCREMENT_US: i64 = 2;
+const WINDOW_SIZE: usize = 1000;
 
 pub struct OmniPaxosServer {
     id: NodeId,
@@ -49,6 +51,9 @@ pub struct OmniPaxosServer {
     slow_reply_trackers: HashMap<CommandId, usize>,
     request_start: HashMap<(ClientId, CommandId), Timestamp>,
     path_by_command: HashMap<CommandId, CommitPath>,
+
+    owd_window: VecDeque<i64>,
+    adaptive_deadline: bool,
 }
 
 struct FastReplyTracker {
@@ -81,7 +86,7 @@ impl OmniPaxosServer {
             omnipaxos_msg_buffer,
             peers: config.get_peers(config.local.server_id),
             config,
-            consistency_check: false,
+            consistency_check: true,
             clock,
             early_buffer: BinaryHeap::new(),
             late_buffer: HashMap::new(),
@@ -94,6 +99,9 @@ impl OmniPaxosServer {
             slow_reply_trackers: HashMap::new(),
             request_start: HashMap::new(),
             path_by_command: HashMap::new(),
+
+            owd_window: VecDeque::with_capacity(WINDOW_SIZE),
+            adaptive_deadline: true,
         }
     }
 
@@ -185,7 +193,6 @@ impl OmniPaxosServer {
         let new_decided_idx = self.omnipaxos.get_decided_idx();
 
         if old_decided_idx < new_decided_idx {
-            
             let decided_entries = self
                 .omnipaxos
                 .read_decided_suffix(self.current_decided_idx)
@@ -197,9 +204,7 @@ impl OmniPaxosServer {
             let decided_commands: Vec<Command> = decided_entries
                 .into_iter()
                 .filter_map(|e| match e {
-                    LogEntry::Decided(cmd) => {
-                        Some(cmd)
-                    }
+                    LogEntry::Decided(cmd) => Some(cmd),
                     _ => unreachable!(),
                 })
                 .collect();
@@ -323,12 +328,13 @@ impl OmniPaxosServer {
 
         // TODO: batching responses possible here (batch at handle_cluster_messages)
         for command in commands {
-
             let read = self.database.handle_command(command.kv_cmd);
 
             if is_leader {
                 let response = match read {
-                    Some(read_result) => ServerMessage::Read(command.id, read_result, "".to_string()),
+                    Some(read_result) => {
+                        ServerMessage::Read(command.id, read_result, "".to_string())
+                    }
                     None => ServerMessage::Write(command.id, "".to_string()),
                 };
 
@@ -367,7 +373,14 @@ impl OmniPaxosServer {
                 ClientMessage::Append(command_id, kv_command) => {
                     let current_ts = self.clock.get_time();
                     let uncertainty = self.clock.get_uncertainty() as i64;
-                    let deadline = current_ts + uncertainty + LATENCY_BOUND_US;
+
+                    let mut deadline = current_ts + uncertainty + LATENCY_BOUND_US;
+
+                    if self.adaptive_deadline {
+                        // Use adaptive P95 OWD instead of the static constant
+                        let adaptive_owd = self.get_p95_owd();
+                        deadline = current_ts + uncertainty + adaptive_owd;
+                    }
 
                     let broadcast_msg = Command {
                         client_id: from,
@@ -376,6 +389,7 @@ impl OmniPaxosServer {
                         kv_cmd: kv_command.clone(),
                         deadline: deadline,
                         path: CommitPath::Fast,
+                        creation_ts: current_ts,
                     };
 
                     self.request_start.insert((from, command_id), current_ts);
@@ -397,11 +411,17 @@ impl OmniPaxosServer {
         for (from, message) in messages.drain(..) {
             trace!("{}: Received {message:?}", self.id);
             match message {
-                ClusterMessage::OmniPaxosMessage(m) => { 
+                ClusterMessage::OmniPaxosMessage(m) => {
                     self.omnipaxos.handle_incoming(m);
                     self.handle_decided_entries();
                 }
-                ClusterMessage::Command(m) => { 
+                ClusterMessage::Command(m) => {
+                    // Track the OWD as soon as the message arrives!
+                    let owd = self.clock.get_time() - m.creation_ts;
+                    if owd > 0 && owd < 1_000_000 {
+                        self.record_owd(owd);
+                    }
+
                     self.append_to_log(m);
                 }
                 ClusterMessage::LeaderStartSignal(start_time) => {
@@ -424,9 +444,7 @@ impl OmniPaxosServer {
                 ClusterMessage::SyncIndex(index_msg) => {
                     debug!(
                         "Follower {} received log index {} for command {}",
-                        self.id,
-                        index_msg.log_index,
-                        index_msg.command_id
+                        self.id, index_msg.log_index, index_msg.command_id
                     );
 
                     self.pending_sync.insert(index_msg.log_index, index_msg);
@@ -446,24 +464,28 @@ impl OmniPaxosServer {
     }
 
     fn append_to_log(&mut self, command: Command) {
-
         // check deadline and last_log_deadline
         if command.deadline < self.last_log_deadline {
             // debug!(
             //     "Command {} from client {} with deadline {} is too late (last log deadline {})",
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
-            self.late_buffer.insert(command.request_key(), command.clone());
-            debug!("Command {} from client {} with deadline {} is too late (last log deadline {})",
-                command.id, command.client_id, command.deadline, self.last_log_deadline);
+            self.late_buffer
+                .insert(command.request_key(), command.clone());
+            debug!(
+                "Command {} from client {} with deadline {} is too late (last log deadline {})",
+                command.id, command.client_id, command.deadline, self.last_log_deadline
+            );
         } else {
             // debug!(
             //     "Command {} from client {} with deadline {} is into early_buffer (last log deadline {})",
             //     command_id, from, command.deadline, self.last_log_deadline
             // );
             self.early_buffer.push(Reverse(command.clone()));
-            debug!("Command {} from client {} with deadline {} is on time (last log deadline {})",
-                command.id, command.client_id, command.deadline, self.last_log_deadline);
+            debug!(
+                "Command {} from client {} with deadline {} is on time (last log deadline {})",
+                command.id, command.client_id, command.deadline, self.last_log_deadline
+            );
         }
 
         // info!(
@@ -487,7 +509,7 @@ impl OmniPaxosServer {
                     cmd.id, cmd.client_id, cmd.deadline, self.last_log_deadline
                 );
 
-                if (self.is_current_leader()){
+                if (self.is_current_leader()) {
                     self.omnipaxos.append(cmd.clone()).expect("Append failed");
                 }
             } else {
@@ -535,11 +557,7 @@ impl OmniPaxosServer {
             return;
         }
 
-        let Some((&key, _)) = self
-            .late_buffer
-            .iter()
-            .min_by_key(|(_, cmd)| cmd.deadline)
-        else {
+        let Some((&key, _)) = self.late_buffer.iter().min_by_key(|(_, cmd)| cmd.deadline) else {
             return;
         };
 
@@ -588,8 +606,10 @@ impl OmniPaxosServer {
                     if local.coordinator_id == self.id {
                         self.handle_slow_reply(reply);
                     } else {
-                        self.network
-                            .send_to_cluster(local.coordinator_id, ClusterMessage::SlowPathReply(reply));
+                        self.network.send_to_cluster(
+                            local.coordinator_id,
+                            ClusterMessage::SlowPathReply(reply),
+                        );
                     }
                 }
             } else {
@@ -599,16 +619,15 @@ impl OmniPaxosServer {
     }
 
     fn handle_fast_reply(&mut self, reply: FastPathReply) {
-
         if reply.is_slow_path {
             if reply.is_leader {
-                let tracker = self
-                    .fast_replies
-                    .entry(reply.command_id)
-                    .or_insert(FastReplyTracker {
-                        leader_hash: None,
-                        follower_hashes: HashMap::new(),
-                    });
+                let tracker =
+                    self.fast_replies
+                        .entry(reply.command_id)
+                        .or_insert(FastReplyTracker {
+                            leader_hash: None,
+                            follower_hashes: HashMap::new(),
+                        });
                 tracker.leader_hash = Some(reply.log_hash);
             }
             return;
@@ -650,7 +669,8 @@ impl OmniPaxosServer {
                 {
                     match response {
                         ServerMessage::Read(command_id, read_result, path) => {
-                            let fast_send = ServerMessage::Read(command_id, read_result, "fast".to_string());
+                            let fast_send =
+                                ServerMessage::Read(command_id, read_result, "fast".to_string());
                             self.network.send_to_client(client_id, fast_send);
                         }
                         ServerMessage::Write(command_id, path) => {
@@ -668,7 +688,10 @@ impl OmniPaxosServer {
     }
 
     fn handle_slow_reply(&mut self, reply: SlowPathReply) {
-        let count = self.slow_reply_trackers.entry(reply.command_id).or_insert(0);
+        let count = self
+            .slow_reply_trackers
+            .entry(reply.command_id)
+            .or_insert(0);
         *count += 1;
 
         let cluster_size = self.peers.len() + 1;
@@ -680,5 +703,26 @@ impl OmniPaxosServer {
             }
             self.slow_reply_trackers.remove(&reply.command_id);
         }
+    }
+
+    /// Records a new one-way delay in the sliding window.
+    fn record_owd(&mut self, owd: i64) {
+        if self.owd_window.len() == WINDOW_SIZE {
+            self.owd_window.pop_front();
+        }
+        self.owd_window.push_back(owd);
+    }
+
+    /// Calculates the 95th percentile of the current OWD window.
+    fn get_p95_owd(&self) -> i64 {
+        if self.owd_window.is_empty() {
+            return LATENCY_BOUND_US;
+        }
+
+        let mut sorted: Vec<i64> = self.owd_window.iter().copied().collect();
+        sorted.sort_unstable();
+
+        let idx = ((sorted.len() as f64) * 0.95).ceil() as usize - 1;
+        sorted[idx]
     }
 }

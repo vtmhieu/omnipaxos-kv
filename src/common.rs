@@ -1,12 +1,11 @@
 pub mod messages {
     use omnipaxos::{messages::Message as OmniPaxosMessage, util::NodeId};
     use serde::{Deserialize, Serialize};
-        
 
     use crate::common::kv::CommitPath;
 
     use super::{
-        kv::{Command, CommandId, KVCommand, ClientId},
+        kv::{ClientId, Command, CommandId, KVCommand},
         utils::Timestamp,
     };
 
@@ -31,7 +30,7 @@ pub mod messages {
         pub log_index: usize,
     }
 
-     #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
     pub struct SlowPathReply {
         pub command_id: CommandId,
         pub client_id: ClientId,
@@ -112,9 +111,12 @@ pub mod kv {
         pub kv_cmd: KVCommand,
         pub deadline: Timestamp,
         pub path: CommitPath,
+        pub creation_ts: Timestamp,
     }
 
-    #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+    #[derive(
+        Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+    )]
     pub enum CommitPath {
         Fast,
         Slow,

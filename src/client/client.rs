@@ -3,7 +3,11 @@ use chrono::Utc;
 use log::*;
 use omnipaxos_kv::common::{kv::*, messages::*};
 use rand::Rng;
-use std::{fs::File, io::Write, time::{Duration, Instant}};
+use std::{
+    fs::File,
+    io::Write,
+    time::{Duration, Instant},
+};
 use tokio::time::interval;
 
 const NETWORK_BATCH_SIZE: usize = 100;
@@ -44,10 +48,10 @@ impl Client {
 
     pub async fn run(&mut self) {
         // Wait for server to signal start
-        if self.metric_report{
+        if self.metric_report {
             let path = format!(
-            "{}-metrics.json",
-            self.config.output_filepath.trim_end_matches(".csv")
+                "{}-metrics.json",
+                self.config.output_filepath.trim_end_matches(".csv")
             );
             let _ = std::fs::remove_file(&path);
         }
@@ -192,7 +196,8 @@ impl Client {
             vec![]
         };
         let total_runtime = end_time.duration_since(self.start_time).as_millis();
-        let throughput = (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);
+        let throughput =
+            (self.client_data.response_count() as f64) / (total_runtime as f64 / 1000.0);
 
         let metrics = serde_json::json!({
             "total_latency_ms": self.latency_sum,
