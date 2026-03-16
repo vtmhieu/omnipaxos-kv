@@ -1,0 +1,48 @@
+Low Clock Drift Runs (Same as the high clock quality from before, using 2.0 clock drift):
+[
+{ "avg_latency_ms": 7, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 11683 },
+{ "avg_latency_ms": 5, "fastpath_count": 1501, "fastpath_ratio": 1.0, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 8245 },
+{ "avg_latency_ms": 9, "fastpath_count": 1500, "fastpath_ratio": 0.9993, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 13595 },
+{ "avg_latency_ms": 9, "fastpath_count": 1496, "fastpath_ratio": 0.9973, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 14924 },
+{ "avg_latency_ms": 10, "fastpath_count": 1492, "fastpath_ratio": 0.9947, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 15964 },
+{ "avg_latency_ms": 7, "fastpath_count": 1501, "fastpath_ratio": 1.0, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 11874 },
+{ "avg_latency_ms": 7, "fastpath_count": 1501, "fastpath_ratio": 1.0, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 11459 },
+{ "avg_latency_ms": 6, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 10097 },
+{ "avg_latency_ms": 7, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 10899 },
+{ "avg_latency_ms": 6, "fastpath_count": 1501, "fastpath_ratio": 1.0, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 9562 }
+]
+
+
+Medium Clock Drift Runs (using 25.0 clock drift):
+[
+  { "avg_latency_ms": 16, "fastpath_count": 1122, "fastpath_ratio": 0.748, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 24280 },
+  { "avg_latency_ms": 84, "fastpath_count": 1497, "fastpath_ratio": 1.0, "response_count": 1497, "runtime_ms": 20002, "throughput_ops_per_sec": 74.84, "total_latency_ms": 126659 },
+  { "avg_latency_ms": 7, "fastpath_count": 1303, "fastpath_ratio": 0.891, "response_count": 1463, "runtime_ms": 20003, "throughput_ops_per_sec": 73.14, "total_latency_ms": 11284 },
+  { "avg_latency_ms": 11, "fastpath_count": 1225, "fastpath_ratio": 0.817, "response_count": 1499, "runtime_ms": 20003, "throughput_ops_per_sec": 74.94, "total_latency_ms": 16512 },
+  { "avg_latency_ms": 12, "fastpath_count": 1345, "fastpath_ratio": 0.900, "response_count": 1494, "runtime_ms": 20002, "throughput_ops_per_sec": 74.69, "total_latency_ms": 18247 },
+  { "avg_latency_ms": 10, "fastpath_count": 1414, "fastpath_ratio": 0.960, "response_count": 1473, "runtime_ms": 20002, "throughput_ops_per_sec": 73.64, "total_latency_ms": 15138 },
+  { "avg_latency_ms": 15, "fastpath_count": 206, "fastpath_ratio": 0.137, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 22722 },
+  { "avg_latency_ms": 6, "fastpath_count": 1501, "fastpath_ratio": 1.0, "response_count": 1501, "runtime_ms": 20003, "throughput_ops_per_sec": 75.04, "total_latency_ms": 9297 },
+  { "avg_latency_ms": 7, "fastpath_count": 1183, "fastpath_ratio": 0.802, "response_count": 1475, "runtime_ms": 20004, "throughput_ops_per_sec": 73.74, "total_latency_ms": 10558 },
+  { "avg_latency_ms": 11, "fastpath_count": 1092, "fastpath_ratio": 0.728, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 17975 }
+]
+
+High Clock Drift Runs (using 100.0):
+[
+  { "avg_latency_ms": 33, "fastpath_count": 1466, "fastpath_ratio": 0.977, "response_count": 1500, "runtime_ms": 20003, "throughput_ops_per_sec": 74.99, "total_latency_ms": 50601 },
+  { "avg_latency_ms": 37, "fastpath_count": 529, "fastpath_ratio": 0.353, "response_count": 1498, "runtime_ms": 20002, "throughput_ops_per_sec": 74.89, "total_latency_ms": 55839 },
+  { "avg_latency_ms": 31, "fastpath_count": 357, "fastpath_ratio": 0.238, "response_count": 1499, "runtime_ms": 20002, "throughput_ops_per_sec": 74.94, "total_latency_ms": 46803 },
+  { "avg_latency_ms": 26, "fastpath_count": 1418, "fastpath_ratio": 0.954, "response_count": 1487, "runtime_ms": 20002, "throughput_ops_per_sec": 74.34, "total_latency_ms": 39786 },
+  { "avg_latency_ms": 19, "fastpath_count": 724, "fastpath_ratio": 0.498, "response_count": 1455, "runtime_ms": 20002, "throughput_ops_per_sec": 72.74, "total_latency_ms": 28115 },
+  { "avg_latency_ms": 25, "fastpath_count": 415, "fastpath_ratio": 0.277, "response_count": 1500, "runtime_ms": 20005, "throughput_ops_per_sec": 74.98, "total_latency_ms": 38176 },
+  { "avg_latency_ms": 33, "fastpath_count": 598, "fastpath_ratio": 0.399, "response_count": 1498, "runtime_ms": 20002, "throughput_ops_per_sec": 74.89, "total_latency_ms": 49464 },
+  { "avg_latency_ms": 31, "fastpath_count": 986, "fastpath_ratio": 0.657, "response_count": 1500, "runtime_ms": 20003, "throughput_ops_per_sec": 74.99, "total_latency_ms": 46723 },
+  { "avg_latency_ms": 27, "fastpath_count": 351, "fastpath_ratio": 0.234, "response_count": 1500, "runtime_ms": 20003, "throughput_ops_per_sec": 74.99, "total_latency_ms": 41757 },
+  { "avg_latency_ms": 21, "fastpath_count": 1379, "fastpath_ratio": 0.920, "response_count": 1499, "runtime_ms": 20001, "throughput_ops_per_sec": 74.95, "total_latency_ms": 32194 }
+]
+
+
+Averages (High, Medium, Low):
+{ "avg_latency_ms": 7.3, "fastpath_ratio": 0.999,  "throughput_ops_per_sec": 75.01 }
+{ "avg_latency_ms": 18.3, "fastpath_ratio": 0.798, "throughput_ops_per_sec": 74.51 }
+{ "avg_latency_ms": 28.3, "fastpath_ratio": 0.551, "throughput_ops_per_sec": 74.77 }

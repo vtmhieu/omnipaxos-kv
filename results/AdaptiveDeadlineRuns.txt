@@ -1,0 +1,49 @@
+High Clock Quality Runs:
+[
+  { "avg_latency_ms": 9, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 13893 },
+  { "avg_latency_ms": 11, "fastpath_count": 1436, "fastpath_ratio": 0.957, "response_count": 1501, "runtime_ms": 20004, "throughput_ops_per_sec": 75.03, "total_latency_ms": 17458 },
+  { "avg_latency_ms": 10, "fastpath_count": 1445, "fastpath_ratio": 0.964, "response_count": 1499, "runtime_ms": 20001, "throughput_ops_per_sec": 74.95, "total_latency_ms": 15397 },
+  { "avg_latency_ms": 7, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20003, "throughput_ops_per_sec": 74.99, "total_latency_ms": 10853 },
+  { "avg_latency_ms": 8, "fastpath_count": 1465, "fastpath_ratio": 0.976, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 12083 },
+  { "avg_latency_ms": 14, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20004, "throughput_ops_per_sec": 74.99, "total_latency_ms": 21560 },
+  { "avg_latency_ms": 9, "fastpath_count": 1501, "fastpath_ratio": 1.0, "response_count": 1501, "runtime_ms": 20004, "throughput_ops_per_sec": 75.03, "total_latency_ms": 14432 },
+  { "avg_latency_ms": 12, "fastpath_count": 1180, "fastpath_ratio": 0.786, "response_count": 1501, "runtime_ms": 20003, "throughput_ops_per_sec": 75.04, "total_latency_ms": 19015 },
+  { "avg_latency_ms": 5, "fastpath_count": 1500, "fastpath_ratio": 1.0, "response_count": 1500, "runtime_ms": 20006, "throughput_ops_per_sec": 74.98, "total_latency_ms": 7629 },
+  { "avg_latency_ms": 9, "fastpath_count": 1490, "fastpath_ratio": 0.993, "response_count": 1501, "runtime_ms": 20003, "throughput_ops_per_sec": 75.04, "total_latency_ms": 14204 }
+]
+
+
+Medium Clock Quality Runs:
+[
+  { "avg_latency_ms": 8, "fastpath_count": 1324, "fastpath_ratio": 0.883, "response_count": 1499, "runtime_ms": 20002, "throughput_ops_per_sec": 74.94, "total_latency_ms": 12916 },
+  { "avg_latency_ms": 11, "fastpath_count": 1253, "fastpath_ratio": 0.835, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 16792 },
+  { "avg_latency_ms": 19, "fastpath_count": 1485, "fastpath_ratio": 0.989, "response_count": 1501, "runtime_ms": 20003, "throughput_ops_per_sec": 75.04, "total_latency_ms": 29412 },
+  { "avg_latency_ms": 15, "fastpath_count": 1441, "fastpath_ratio": 0.961, "response_count": 1500, "runtime_ms": 20002, "throughput_ops_per_sec": 74.99, "total_latency_ms": 23666 },
+  { "avg_latency_ms": 13, "fastpath_count": 1013, "fastpath_ratio": 0.676, "response_count": 1498, "runtime_ms": 20002, "throughput_ops_per_sec": 74.89, "total_latency_ms": 19486 },
+  { "avg_latency_ms": 9, "fastpath_count": 1408, "fastpath_ratio": 0.945, "response_count": 1490, "runtime_ms": 20003, "throughput_ops_per_sec": 74.49, "total_latency_ms": 13921 },
+  { "avg_latency_ms": 14, "fastpath_count": 1446, "fastpath_ratio": 0.965, "response_count": 1499, "runtime_ms": 20002, "throughput_ops_per_sec": 74.94, "total_latency_ms": 21820 },
+  { "avg_latency_ms": 15, "fastpath_count": 1459, "fastpath_ratio": 0.972, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 23589 },
+  { "avg_latency_ms": 15, "fastpath_count": 1459, "fastpath_ratio": 0.972, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 23589 },
+  { "avg_latency_ms": 13, "fastpath_count": 1431, "fastpath_ratio": 0.954, "response_count": 1500, "runtime_ms": 20003, "throughput_ops_per_sec": 74.99, "total_latency_ms": 20679 }
+]
+
+
+Low Clock Quality Runs:
+[
+  { "avg_latency_ms": 56, "fastpath_count": 1050, "fastpath_ratio": 0.700, "response_count": 1499, "runtime_ms": 20001, "throughput_ops_per_sec": 74.95, "total_latency_ms": 84918 },
+  { "avg_latency_ms": 10, "fastpath_count": 407, "fastpath_ratio": 0.271, "response_count": 1501, "runtime_ms": 20001, "throughput_ops_per_sec": 75.05, "total_latency_ms": 15581 },
+  { "avg_latency_ms": 12, "fastpath_count": 586, "fastpath_ratio": 0.390, "response_count": 1501, "runtime_ms": 20003, "throughput_ops_per_sec": 75.04, "total_latency_ms": 18615 },
+  { "avg_latency_ms": 9, "fastpath_count": 593, "fastpath_ratio": 0.398, "response_count": 1489, "runtime_ms": 20002, "throughput_ops_per_sec": 74.44, "total_latency_ms": 14280 },
+  { "avg_latency_ms": 82, "fastpath_count": 1262, "fastpath_ratio": 0.856, "response_count": 1475, "runtime_ms": 20004, "throughput_ops_per_sec": 73.74, "total_latency_ms": 122102 },
+  { "avg_latency_ms": 44, "fastpath_count": 720, "fastpath_ratio": 0.483, "response_count": 1491, "runtime_ms": 20005, "throughput_ops_per_sec": 74.53, "total_latency_ms": 65629 },
+  { "avg_latency_ms": 31, "fastpath_count": 38, "fastpath_ratio": 0.025, "response_count": 1501, "runtime_ms": 20002, "throughput_ops_per_sec": 75.04, "total_latency_ms": 47914 },
+  { "avg_latency_ms": 70, "fastpath_count": 1114, "fastpath_ratio": 0.745, "response_count": 1495, "runtime_ms": 20003, "throughput_ops_per_sec": 74.74, "total_latency_ms": 105404 },
+  { "avg_latency_ms": 9, "fastpath_count": 520, "fastpath_ratio": 0.377, "response_count": 1378, "runtime_ms": 20003, "throughput_ops_per_sec": 68.89, "total_latency_ms": 12490 },
+  { "avg_latency_ms": 16, "fastpath_count": 95, "fastpath_ratio": 0.064, "response_count": 1490, "runtime_ms": 20002, "throughput_ops_per_sec": 74.49, "total_latency_ms": 24486 }
+]
+
+
+Averages (High, Medium, Low):
+{ "avg_latency_ms": 9.4, "fastpath_ratio": 0.968, "throughput_ops_per_sec": 75.01 }
+{ "avg_latency_ms": 13.2, "fastpath_ratio": 0.915, "throughput_ops_per_sec": 74.94 }
+{ "avg_latency_ms": 33.9, "fastpath_ratio": 0.431, "throughput_ops_per_sec": 74.09 }
