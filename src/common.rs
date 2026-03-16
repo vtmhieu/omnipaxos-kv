@@ -39,7 +39,7 @@ pub mod messages {
     }
 
     #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-    pub struct FastPathReply {
+    pub struct Reply {
         pub command_id: CommandId,
         pub client_id: ClientId,
         pub coordinator_id: NodeId,
@@ -56,7 +56,7 @@ pub mod messages {
         Command(Command),
         LeaderResponse(LeaderResponse),
         SyncIndex(SyncIndex),
-        FastPathReply(FastPathReply),
+        Reply(Reply),
         SlowPathReply(SlowPathReply),
     }
 

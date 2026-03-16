@@ -213,7 +213,7 @@ impl OmniPaxosServer {
 
                 let cmd: &Command = cmd;
 
-                let fast_reply = FastPathReply {
+                let fast_reply = Reply {
                     command_id: cmd.id,
                     client_id: cmd.client_id,
                     coordinator_id: cmd.coordinator_id,
@@ -223,7 +223,7 @@ impl OmniPaxosServer {
                     is_slow_path: matches!(cmd.path, CommitPath::Slow),
                 };
 
-                let msg = ClusterMessage::FastPathReply(fast_reply.clone());
+                let msg = ClusterMessage::Reply(fast_reply.clone());
 
                 if cmd.coordinator_id == self.id {
                     // coordinator itself
@@ -409,7 +409,7 @@ impl OmniPaxosServer {
                     received_start_signal = true;
                     self.send_client_start_signals(start_time);
                 }
-                ClusterMessage::FastPathReply(reply) => {
+                ClusterMessage::Reply(reply) => {
                     self.handle_fast_reply(reply);
                 }
                 ClusterMessage::LeaderResponse(leader_response) => {
@@ -598,7 +598,7 @@ impl OmniPaxosServer {
         }
     }
 
-    fn handle_fast_reply(&mut self, reply: FastPathReply) {
+    fn handle_fast_reply(&mut self, reply: Reply) {
 
         if reply.is_slow_path {
             if reply.is_leader {
